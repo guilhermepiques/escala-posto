@@ -17,7 +17,7 @@ const WORK_TABS = [
 ];
 const INFO_TABS = [
   { to: '/regras-5x2', label: 'Regras do 5x2' },
-  { to: '/24h-com-13', label: 'Como manter 24h' },
+  { to: '/como-manter-24h', label: 'Como manter 24h' },
   { to: '/ferias', label: 'Férias' },
   { to: '/duvidas', label: 'Dúvidas' },
 ];
@@ -41,7 +41,8 @@ export default function App() {
           <Route path="/funcionarios" element={<EmployeesPage />} />
           <Route path="/configuracoes" element={<ConfigPage />} />
           <Route path="/regras-5x2" element={<Regras5x2Page />} />
-          <Route path="/24h-com-13" element={<Viabilidade24hPage />} />
+          <Route path="/como-manter-24h" element={<Viabilidade24hPage />} />
+          <Route path="/24h-com-13" element={<Navigate to="/como-manter-24h" replace />} />
           <Route path="/ferias" element={<FeriasPage />} />
           <Route path="/duvidas" element={<DuvidasPage />} />
           <Route path="*" element={<Navigate to="/escala" replace />} />
@@ -56,7 +57,7 @@ export default function App() {
 }
 
 function Header() {
-  const { store, user, logOut } = useApp();
+  const { store, user, logOut, config, postos, posto, switchPosto } = useApp();
   const tab = (t: { to: string; label: string }) => (
     <NavLink
       key={t.to}
@@ -75,7 +76,10 @@ function Header() {
       <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-3 px-4 py-3">
         <div className="flex items-center gap-2">
           <img src="/favicon.svg" alt="" className="h-8 w-8 rounded-lg ring-2 ring-white/30" />
-          <span className="text-lg font-bold">Escala do Posto</span>
+          <div className="leading-tight">
+            <div className="text-lg font-bold">Escala do Posto</div>
+            {config.businessName && <div className="text-xs text-brand-100">{config.businessName}</div>}
+          </div>
         </div>
         <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {WORK_TABS.map(tab)}
@@ -89,6 +93,20 @@ function Header() {
             </span>
           ) : (
             <>
+              {postos.length > 1 && (
+                <select
+                  className="rounded border border-white/40 bg-brand-800 px-1 py-1 text-white"
+                  value={posto?.id}
+                  onChange={(e) => switchPosto(e.target.value)}
+                  title="Trocar de posto"
+                >
+                  {postos.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.ownerUid === user?.uid ? 'Meu posto' : `Posto de ${p.ownerEmail}`}
+                    </option>
+                  ))}
+                </select>
+              )}
               <span className="hidden sm:inline">{user?.displayName ?? user?.email}</span>
               <button className="rounded border border-white/40 px-2 py-1 hover:bg-white/10" onClick={() => logOut()}>
                 Sair

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useConfirm } from '../components/Dialog';
 import { diffDays, formatDate } from '../domain/dates';
 import { newId, sampleEmployees } from '../domain/defaults';
+import { effectiveDemand } from '../domain/demand';
 import type { Absence, Employee, Team } from '../domain/types';
 import { labelAbsence } from '../domain/validator';
 import { useApp } from '../state';
@@ -20,7 +21,7 @@ export default function EmployeesPage() {
   const teamCard = (team: Team) => {
     const n = employees.filter((e) => e.active && e.team === team).length;
     const shifts = config.shifts.filter((s) => s.team === team);
-    const dem = Object.values(config.demand).reduce((acc, day) => acc + shifts.reduce((a, s) => a + (day[s.id]?.ideal ?? 0), 0), 0);
+    const dem = Object.values(effectiveDemand(config, employees)).reduce((acc, day) => acc + shifts.reduce((a, s) => a + (day[s.id]?.ideal ?? 0), 0), 0);
     return { n, cap: n * workDays, dem, shifts };
   };
 
@@ -75,7 +76,7 @@ export default function EmployeesPage() {
               for (const e of sampleEmployees()) await saveEmployee(e);
             }}
           >
-            Criar 13 funcionários de exemplo (10 no dia e 3 na madrugada) para depois trocar os nomes
+            Criar funcionários de exemplo (10 no dia e 3 na madrugada) para testar
           </button>
         </div>
       )}

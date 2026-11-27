@@ -111,7 +111,7 @@ export default function FeriasPage() {
         <tbody>
           <tr>
             <td>Ninguém de férias</td>
-            <td>Dia: 50 · Madrugada: 15</td>
+            <td>Exemplo com 10 no dia e 3 na madrugada: 50 · 15</td>
             <td>Escala normal: manhã e tarde com 3 ou 4 pessoas, madrugada sempre com 2.</td>
           </tr>
           <tr>
@@ -182,7 +182,7 @@ export default function FeriasPage() {
       <h2>Dicas para planejar o ano</h2>
       <ul>
         <li>
-          Faça um calendário do ano com <b>uma pessoa por mês</b>. Com 13 funcionários, sobra quase 1 mês por pessoa.
+          Faça um calendário do ano com <b>uma pessoa de férias por vez em cada equipe</b>, espalhando as férias pelos 12 meses.
         </li>
         <li>Coloque as férias da madrugada nos meses em que alguém do dia aceite fazer a noite.</li>
         <li>Prefira os meses de menos movimento para as férias.</li>
@@ -208,7 +208,7 @@ export default function FeriasPage() {
         </Faq>
         <Faq q="Posso mandar duas pessoas de férias juntas?">
           <p>
-            Pela lei, pode. Mas, com 13 pessoas, a escala fica bem apertada (veja a tabela acima). O revisor avisa quando isso acontece.
+            Pela lei, pode. Mas, com equipe enxuta, a escala fica bem apertada (veja a tabela acima). O revisor avisa quando isso acontece.
           </p>
         </Faq>
       </div>

@@ -10,7 +10,8 @@ Aplicação web para montar a escala de trabalho de um posto de combustível 24h
   compilado para WebAssembly). Roda inteiro no navegador: sem servidor e sem inteligência artificial.
 - **Revisor legal**: confere a escala a cada mudança (inclusive as manuais) e bloqueia a exportação se houver erro.
 - **Exporta** para impressão/PDF e imagem (para enviar no WhatsApp).
-- **Abas informativas**: regras do 5x2, como manter o posto 24h com 13 funcionários (com alternativas) e dúvidas.
+- **Configurável por posto**: movimento de cada dia, restrições entre funcionários, rodízio ou turno fixo, regras.
+- **Abas informativas**: regras do 5x2, como manter o posto 24h, férias e dúvidas.
 
 ### Regras verificadas
 
@@ -18,7 +19,7 @@ Aplicação web para montar a escala de trabalho de um posto de combustível 24h
 | --- | --- |
 | 2 folgas por semana (segunda a domingo), máx. 42h/semana (40h a partir de 16/12/2027) | EC 141/2026; Portaria MTE 2.041/2026 |
 | 11h entre jornadas; após folga, 24h + 11h | CLT art. 66 e 67; Súmula 110 TST |
-| Máx. 6 dias seguidos | CLT art. 67; OJ 410 SDI-1 |
+| Máx. 5 dias seguidos e 2 folgas também de domingo a sábado (padrão do app; a lei permite 6) | CLT art. 67; OJ 410 SDI-1 |
 | Folga no domingo a cada 3 semanas (mulheres: 2) | Lei 10.101/2000 art. 6º; CLT art. 386; CCT cl. 6.2 / 6.2.1 |
 | Hora noturna reduzida (52min30s) e prorrogação | CLT art. 73; Súmula 60 TST |
 | Não misturar dia e madrugada (turno ininterrupto) | CF art. 7º, XIV; OJ 360 SDI-1 |
@@ -41,14 +42,20 @@ Sem as variáveis do Firebase o site roda em **modo local** (dados guardados só
 1. Acesse <https://console.firebase.google.com> e crie um projeto (pode desativar o Google Analytics).
 2. **Authentication** → Começar → Método de login → ative **Google**.
 3. **Firestore Database** → Criar banco de dados → modo de produção → região `southamerica-east1` (São Paulo).
-4. Em **Firestore → Regras**, cole o conteúdo de [`firestore.rules`](firestore.rules) **trocando os e-mails** pelos e-mails
-   que podem acessar, e publique. Troque os e-mails **só no Console** — não grave e-mails reais no repositório.
+4. Em **Firestore → Regras**, cole o conteúdo de [`firestore.rules`](firestore.rules) do jeito que está e publique
+   (não precisa colocar e-mail nenhum).
 5. **Configurações do projeto** → Seus apps → adicione um app **Web** (`</>`) e copie os valores do `firebaseConfig`.
 6. Copie `.env.example` para `.env.local` e preencha.
 7. Depois do deploy, em **Authentication → Configurações → Domínios autorizados**, adicione o domínio da Vercel
    (ex.: `escala-posto.vercel.app`).
 
 O plano gratuito (Spark) é mais que suficiente e não desliga por falta de uso.
+
+### Contas e acesso
+
+- Cada conta do Google que entra pela primeira vez ganha **o próprio posto** (dados separados) e vira **dono**.
+- O dono libera outros e-mails em **Configurações → Posto e acesso**; quem for liberado entra com a própria conta
+  do Google e vê a mesma escala. Quem tem acesso a mais de um posto troca pelo seletor no topo.
 
 ## Publicar na Vercel
 

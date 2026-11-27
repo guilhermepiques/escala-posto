@@ -293,7 +293,7 @@ function ExportDialog({
         {blocked ? (
           <>
             <div className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
-              ✗ A escala tem {c.erro} erro(s) legal(is). Corrija antes de exportar — assim seus pais ficam protegidos.
+              ✗ A escala tem {c.erro} erro(s) legal(is). Corrija antes de exportar — assim o posto fica protegido.
             </div>
             <IssueList issues={errors} />
           </>

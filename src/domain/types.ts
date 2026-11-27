@@ -100,10 +100,36 @@ export interface Holiday {
   name: string;
 }
 
+export type Movement = 'alto' | 'normal' | 'baixo';
+
+export type RestrictionType = 'naoJuntos' | 'diaDeFolga' | 'peloMenosUm';
+
+export interface Restriction {
+  id: string;
+  type: RestrictionType;
+  /** naoJuntos: 2 ou mais pessoas que não podem ficar no mesmo turno.
+   *  diaDeFolga: a pessoa (1) que nunca trabalha nos dias da semana indicados.
+   *  peloMenosUm: grupo do qual pelo menos 1 deve estar em cada turno em que trabalham. */
+  employeeIds: string[];
+  /** Só para diaDeFolga: dias da semana (0 = domingo ... 6 = sábado). */
+  weekdays?: number[];
+  note?: string;
+}
+
 export interface AppConfig {
+  /** Nome do posto (aparece no topo e na impressão). */
+  businessName?: string;
   shifts: Shift[];
+  /** Demanda manual por dia/turno (usada quando demandMode = 'manual'). */
   demand: Demand;
+  /** 'auto': calcula as pessoas por turno pelo movimento de cada dia e pelo tamanho da equipe. */
+  demandMode: 'auto' | 'manual';
+  /** Movimento de cada dia da semana (0 = domingo ... 6 = sábado). */
+  movement: Record<number, Movement>;
+  /** Mínimo de pessoas em cada turno (no modo automático). */
+  minPerShift: Record<string, number>;
   rules: Rules;
+  restrictions: Restriction[];
   /** Feriados extras (municipais etc.). Os nacionais e estaduais são automáticos. */
   customHolidays: Holiday[];
   /** Datas a partir das quais o limite semanal muda automaticamente. */

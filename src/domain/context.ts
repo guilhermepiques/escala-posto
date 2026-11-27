@@ -1,5 +1,6 @@
 import { addDays, monthDays, weekday } from './dates';
 import { legalWeeklyLimit } from './defaults';
+import { effectiveDemand } from './demand';
 import { holidaysForMonth } from './holidays';
 import { shiftHours, type ShiftHours } from './hours';
 import type { Absence, AppConfig, Assignments, Employee, ISODate, MonthKey, Shift } from './types';
@@ -36,16 +37,17 @@ export function buildContext(
   const shiftById = new Map(config.shifts.map((s) => [s.id, s]));
   const hoursById = new Map(config.shifts.map((s) => [s.id, shiftHours(s)]));
   const holidays = holidaysForMonth(month, config.customHolidays);
+  const active = employees.filter((e) => e.active);
   return {
     month,
     days,
     histDays,
     allDays: [...histDays, ...days],
-    employees: employees.filter((e) => e.active),
+    employees: active,
     shifts: config.shifts,
     shiftById,
     hoursById,
-    config,
+    config: { ...config, demand: effectiveDemand(config, active) },
     holidays,
     history: previous ?? {},
   };

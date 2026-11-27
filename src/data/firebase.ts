@@ -16,7 +16,10 @@ import {
   getDocs,
   initializeFirestore,
   persistentLocalCache,
+  query,
   setDoc,
+  updateDoc,
+  where,
   type Firestore,
 } from 'firebase/firestore';
 import type { AppConfig, Employee, Schedule } from '../domain/types';
@@ -34,9 +37,6 @@ export const firebaseConfig = {
 };
 
 export const firebaseEnabled = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
-
-/** Todos os dados ficam debaixo deste documento. */
-const ROOT = 'postos/principal';
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
@@ -68,33 +68,65 @@ export async function logOut(): Promise<void> {
   await signOut(auth);
 }
 
-export function createFirebaseStore(): Store {
+/**
+ * Cada posto é um "espaço" separado: postos/{postoId}, com a lista de e-mails que têm acesso.
+ * Quem cria a conta vira dono; o dono libera outros e-mails em Configurações.
+ */
+export interface PostoInfo {
+  id: string;
+  ownerUid: string;
+  ownerEmail: string;
+  members: string[];
+  createdAt?: number;
+}
+
+export const normEmail = (e: string) => e.trim().toLowerCase();
+
+/** Postos aos quais o usuário tem acesso. Se não tiver nenhum, cria o dele. */
+export async function loadPostos(user: User): Promise<PostoInfo[]> {
   const { db } = init();
+  const email = normEmail(user.email ?? '');
+  const snap = await getDocs(query(collection(db, 'postos'), where('members', 'array-contains', email)));
+  const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PostoInfo, 'id'>) }));
+  if (list.length > 0) return list;
+  const mine: Omit<PostoInfo, 'id'> = { ownerUid: user.uid, ownerEmail: email, members: [email], createdAt: Date.now() };
+  await setDoc(doc(db, 'postos', user.uid), mine);
+  return [{ id: user.uid, ...mine }];
+}
+
+export async function saveMembers(postoId: string, members: string[]): Promise<void> {
+  const { db } = init();
+  await updateDoc(doc(db, 'postos', postoId), { members: [...new Set(members.map(normEmail))] });
+}
+
+export function createFirebaseStore(postoId: string): Store {
+  const { db } = init();
+  const root = `postos/${postoId}`;
   return {
     kind: 'firebase',
     async getConfig() {
-      const snap = await getDoc(doc(db, `${ROOT}/meta/config`));
+      const snap = await getDoc(doc(db, `${root}/meta/config`));
       return snap.exists() ? (snap.data() as AppConfig) : null;
     },
     async saveConfig(c) {
-      await setDoc(doc(db, `${ROOT}/meta/config`), clean(c));
+      await setDoc(doc(db, `${root}/meta/config`), clean(c));
     },
     async listEmployees() {
-      const snap = await getDocs(collection(db, `${ROOT}/employees`));
+      const snap = await getDocs(collection(db, `${root}/employees`));
       return snap.docs.map((d) => d.data() as Employee);
     },
     async saveEmployee(e) {
-      await setDoc(doc(db, `${ROOT}/employees/${e.id}`), clean(e));
+      await setDoc(doc(db, `${root}/employees/${e.id}`), clean(e));
     },
     async deleteEmployee(id) {
-      await deleteDoc(doc(db, `${ROOT}/employees/${id}`));
+      await deleteDoc(doc(db, `${root}/employees/${id}`));
     },
     async getSchedule(month) {
-      const snap = await getDoc(doc(db, `${ROOT}/schedules/${month}`));
+      const snap = await getDoc(doc(db, `${root}/schedules/${month}`));
       return snap.exists() ? (snap.data() as Schedule) : null;
     },
     async saveSchedule(s) {
-      await setDoc(doc(db, `${ROOT}/schedules/${s.month}`), clean(s));
+      await setDoc(doc(db, `${root}/schedules/${s.month}`), clean(s));
     },
   };
 }

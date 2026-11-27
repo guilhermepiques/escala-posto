@@ -49,8 +49,9 @@ export default function Regras5x2Page() {
               <b>Convenção Coletiva 2026-2028</b>
             </td>
             <td>
-              Acordo entre o sindicato dos frentistas (Fepospetro / Sinpospetro Guarulhos e Região, que cobre Francisco Morato) e o sindicato
-              dos postos (Sincopetro). Vale para o posto. Cláusulas sociais até 28/02/2028.
+              Acordo entre os sindicatos dos frentistas (Fepospetro e sindicatos regionais) e o sindicato dos postos (Sincopetro). Vale para
+              os postos do Estado de São Paulo nas bases dos sindicatos que assinaram. Cláusulas sociais até 28/02/2028. Em outros estados,
+              confira a convenção local.
             </td>
           </tr>
         </tbody>

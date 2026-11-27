@@ -1,6 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { User } from 'firebase/auth';
-import { createFirebaseStore, firebaseEnabled, logOut, signIn, watchUser } from './data/firebase';
+import {
+  createFirebaseStore,
+  firebaseEnabled,
+  loadPostos,
+  logOut,
+  saveMembers,
+  signIn,
+  watchUser,
+  type PostoInfo,
+} from './data/firebase';
 import { createLocalStore, type Store } from './data/store';
 import { defaultConfig } from './domain/defaults';
 import type { AppConfig, Employee } from './domain/types';
@@ -10,6 +19,12 @@ interface AppState {
   config: AppConfig;
   employees: Employee[];
   user: User | null;
+  /** Posto atual (só no modo Firebase). */
+  posto: PostoInfo | null;
+  /** Todos os postos a que o usuário tem acesso. */
+  postos: PostoInfo[];
+  switchPosto: (id: string) => void;
+  updateMembers: (members: string[]) => Promise<void>;
   saveConfig: (c: AppConfig) => Promise<void>;
   saveEmployee: (e: Employee) => Promise<void>;
   deleteEmployee: (id: string) => Promise<void>;
@@ -35,6 +50,9 @@ function migrateConfig(c: AppConfig | null): AppConfig {
     ...c,
     rules: { ...def.rules, ...c.rules, ...(old ? { maxConsecutiveDays: Math.min(c.rules.maxConsecutiveDays ?? 5, 5) } : {}) },
     customHolidays: c.customHolidays ?? [],
+    restrictions: c.restrictions ?? [],
+    movement: { ...def.movement, ...(c.movement ?? {}) },
+    minPerShift: { ...def.minPerShift, ...(c.minPerShift ?? {}) },
   };
 }
 
@@ -52,18 +70,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [postos, setPostos] = useState<PostoInfo[]>([]);
+  const [postoId, setPostoId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!firebaseEnabled) return;
-    return watchUser((u) => {
+    return watchUser(async (u) => {
       setUser(u);
-      setAuthReady(true);
-      setStore(u ? createFirebaseStore() : null);
       setConfig(null);
       setEmployees(null);
       setError(null);
+      setStore(null);
+      if (!u) {
+        setPostos([]);
+        setPostoId(null);
+        setAuthReady(true);
+        return;
+      }
+      try {
+        const list = await loadPostos(u);
+        setPostos(list);
+        let saved: string | null = null;
+        try {
+          saved = localStorage.getItem('escala:posto');
+        } catch {
+          /* ignora */
+        }
+        // Prefere o último posto usado; senão, um posto para o qual a pessoa foi convidada.
+        const chosen = list.find((p) => p.id === saved) ?? list.find((p) => p.ownerUid !== u.uid) ?? list[0];
+        setPostoId(chosen.id);
+      } catch (err) {
+        setError(`Não foi possível abrir a conta: ${(err as Error).message}`);
+      }
+      setAuthReady(true);
     });
   }, []);
+
+  useEffect(() => {
+    if (!postoId) return;
+    setConfig(null);
+    setEmployees(null);
+    setStore(createFirebaseStore(postoId));
+    try {
+      localStorage.setItem('escala:posto', postoId);
+    } catch {
+      /* ignora */
+    }
+  }, [postoId]);
+
+  const posto = postos.find((p) => p.id === postoId) ?? null;
+  const updateMembers = useCallback(
+    async (members: string[]) => {
+      if (!posto) return;
+      await saveMembers(posto.id, members);
+      setPostos((prev) => prev.map((p) => (p.id === posto.id ? { ...p, members: [...new Set(members.map((m) => m.trim().toLowerCase()))] } : p)));
+    },
+    [posto],
+  );
 
   useEffect(() => {
     if (!store) return;
@@ -121,9 +184,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AppState | null>(
     () =>
       store && config && employees
-        ? { store, config, employees, user, saveConfig, saveEmployee, deleteEmployee, logOut }
+        ? {
+            store,
+            config,
+            employees,
+            user,
+            posto,
+            postos,
+            switchPosto: setPostoId,
+            updateMembers,
+            saveConfig,
+            saveEmployee,
+            deleteEmployee,
+            logOut,
+          }
         : null,
-    [store, config, employees, user, saveConfig, saveEmployee, deleteEmployee],
+    [store, config, employees, user, posto, postos, updateMembers, saveConfig, saveEmployee, deleteEmployee],
   );
 
   if (!authReady) return <FullScreen>Carregando…</FullScreen>;

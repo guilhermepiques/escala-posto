@@ -1,4 +1,4 @@
-import type { AppConfig, Demand, Employee, Rules, Shift } from './types';
+import type { AppConfig, Demand, Employee, Movement, Rules, Shift } from './types';
 
 export const DEFAULT_SHIFTS: Shift[] = [
   { id: 'M', code: 'M', name: 'Manhã', start: '06:00', end: '14:00', breakMinutes: 30, team: 'dia', color: '#f59e0b' },
@@ -7,12 +7,7 @@ export const DEFAULT_SHIFTS: Shift[] = [
   { id: 'N', code: 'N', name: 'Madrugada', start: '22:00', end: '06:00', breakMinutes: 60, team: 'noite', color: '#6366f1' },
 ];
 
-/**
- * Demanda padrão pensada para 13 funcionários: 10 na equipe do dia (rodízio entre manhã e tarde,
- * 50 turnos por semana) e 3 na madrugada (15 turnos por semana).
- * Manhã e tarde: domingo, terça e quarta com 3; demais dias com 4 (= 50 turnos).
- * Madrugada: sempre 2 (14 turnos; sobra 1 turno por semana como reforço).
- */
+/** Demanda manual inicial (exemplo para 10 pessoas no dia e 3 na madrugada). */
 function buildDefaultDemand(): Demand {
   const d: Demand = {};
   for (let wd = 0; wd < 7; wd++) {
@@ -43,11 +38,27 @@ export const DEFAULT_RULES: Rules = {
   rotationStartWeekday: 4,
 };
 
+/** Movimento padrão: sexta e sábado com mais movimento; domingo, terça e quarta com menos. */
+export const DEFAULT_MOVEMENT: Record<number, Movement> = {
+  0: 'baixo',
+  1: 'normal',
+  2: 'baixo',
+  3: 'baixo',
+  4: 'normal',
+  5: 'alto',
+  6: 'alto',
+};
+
 export function defaultConfig(): AppConfig {
   return {
+    businessName: '',
     shifts: DEFAULT_SHIFTS.map((s) => ({ ...s })),
     demand: buildDefaultDemand(),
+    demandMode: 'auto',
+    movement: { ...DEFAULT_MOVEMENT },
+    minPerShift: { M: 2, T: 2, N: 2 },
     rules: { ...DEFAULT_RULES },
+    restrictions: [],
     customHolidays: [],
   };
 }

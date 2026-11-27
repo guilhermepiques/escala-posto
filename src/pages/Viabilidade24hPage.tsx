@@ -1,4 +1,48 @@
 import { Callout, InfoPage } from '../components/Info';
+import { effectiveDemand } from '../domain/demand';
+import { useApp } from '../state';
+
+/** Contas com a equipe cadastrada no momento. */
+function SuaEquipe() {
+  const { config, employees } = useApp();
+  const active = employees.filter((e) => e.active);
+  if (active.length === 0) return null;
+  const workDays = 7 - config.rules.restDaysPerWeek;
+  const demand = effectiveDemand(config, active);
+  const rows = (['dia', 'noite'] as const).map((team) => {
+    const shifts = config.shifts.filter((s) => s.team === team);
+    const people = active.filter((e) => e.team === team).length;
+    const need = [0, 1, 2, 3, 4, 5, 6].reduce((acc, wd) => acc + shifts.reduce((a, s) => a + Math.max(demand[wd]?.[s.id]?.min ?? 0, 0), 0), 0);
+    return { team, people, capacity: people * workDays, need };
+  });
+  const total = active.length * workDays;
+  return (
+    <Callout tone="ok" title={`A sua equipe hoje: ${active.length} funcionários`}>
+      <ul className="!mb-0">
+        <li>
+          No 5x2 a equipe faz <b>{total} turnos por semana</b> ({active.length} × {workDays}).
+        </li>
+        {rows.map((r) => (
+          <li key={r.team}>
+            {r.team === 'dia' ? 'Equipe do dia' : 'Madrugada'}: {r.people} pessoas = {r.capacity} turnos por semana
+            {r.need > 0 && (
+              <>
+                {' '}
+                (o mínimo configurado pede {r.need}
+                {r.capacity < r.need ? <b className="text-red-700"> — não dá para cobrir o mínimo</b> : ''})
+              </>
+            )}
+            .
+          </li>
+        ))}
+        <li>
+          Como cada pessoa trabalha {workDays} dos 7 dias, em média ficam <b>{(total / 7).toFixed(1)} pessoas trabalhando por dia</b>, somando
+          todos os turnos.
+        </li>
+      </ul>
+    </Callout>
+  );
+}
 
 function Bands({ rows }: { rows: Array<{ label: string; values: Array<string | number> }> }) {
   const heads = ['06h–14h', '14h–18h', '18h–22h', '22h–06h'];
@@ -31,10 +75,15 @@ function Bands({ rows }: { rows: Array<{ label: string; values: Array<string | n
 export default function Viabilidade24hPage() {
   return (
     <InfoPage
-      title="Como manter o posto 24h com 13 funcionários"
+      title="Como manter o posto 24h"
       intro="As contas por trás da escala, as alternativas possíveis e o que muda nas férias. Para consultar sempre que bater a dúvida."
     >
-      <h2>A conta principal</h2>
+      <SuaEquipe />
+      <h2>Exemplo: posto 24h com 13 funcionários</h2>
+      <p>
+        Para entender a lógica, veja o caso de um posto com 13 funcionários que, na 6x1, trabalhava com 4 pessoas de manhã, 4 à tarde e 2 de
+        madrugada.
+      </p>
       <table>
         <thead>
           <tr>

@@ -238,6 +238,9 @@ export function review(ctx: PlanContext, assignments: Assignments): Issue[] {
   // ---------- Férias ----------
   issues.push(...reviewVacations(ctx));
 
+  // ---------- Restrições configuradas ----------
+  issues.push(...reviewRestrictions(ctx, assignments));
+
   // ---------- Cobertura dos turnos ----------
   for (const d of ctx.days) {
     const wd = weekday(d);
@@ -288,6 +291,75 @@ export function review(ctx: PlanContext, assignments: Assignments): Issue[] {
   return issues.sort((a, b) => sevOrder(a.severity) - sevOrder(b.severity));
 }
 
+/** Restrições definidas pelo gerente em Configurações. */
+export function reviewRestrictions(ctx: PlanContext, assignments: Assignments): Issue[] {
+  const out: Issue[] = [];
+  const byId = new Map(ctx.employees.map((e) => [e.id, e]));
+  const names = (ids: string[]) => ids.map((id) => byId.get(id)?.name).filter(Boolean).join(', ');
+  for (const rs of ctx.config.restrictions ?? []) {
+    const ids = rs.employeeIds.filter((id) => byId.has(id));
+    if (rs.type === 'diaDeFolga') {
+      for (const id of ids) {
+        const bad = ctx.days.filter((d) => assignments[id]?.[d] && (rs.weekdays ?? []).includes(weekday(d)));
+        if (bad.length)
+          out.push({
+            severity: 'atencao',
+            code: 'RESTRICAO_DIA',
+            employeeId: id,
+            date: bad[0],
+            title: `${byId.get(id)!.name} está escalado(a) em dia que não pode trabalhar (${bad.map(formatDateShort).join(', ')})`,
+            detail: `Pela restrição cadastrada, não trabalha: ${(rs.weekdays ?? []).map((w) => weekdayShort(w)).join(', ')}.`,
+            suggestion: 'Troque esses dias por folga ou ajuste a restrição em Configurações.',
+          });
+      }
+    }
+    if (rs.type === 'naoJuntos' && ids.length >= 2) {
+      const bad: string[] = [];
+      let first: ISODate | undefined;
+      for (const d of ctx.days)
+        for (const s of ctx.shifts) {
+          const together = ids.filter((id) => assignments[id]?.[d] === s.id);
+          if (together.length >= 2) {
+            bad.push(`${formatDateShort(d)} ${s.name.toLowerCase()}`);
+            first ??= d;
+          }
+        }
+      if (bad.length)
+        out.push({
+          severity: 'atencao',
+          code: 'RESTRICAO_JUNTOS',
+          date: first,
+          title: `${names(ids)} no mesmo turno (${bad.length}x)`,
+          detail: `Pela restrição cadastrada, não podem trabalhar juntos. Dias: ${bad.slice(0, 8).join(', ')}${bad.length > 8 ? '…' : ''}.`,
+          suggestion: 'Mova um deles para outro turno ou para folga.',
+        });
+    }
+    if (rs.type === 'peloMenosUm' && ids.length >= 1) {
+      const shiftIds = new Set(ids.flatMap((id) => allowedShifts(ctx, byId.get(id)!).map((s) => s.id)));
+      const bad: string[] = [];
+      let first: ISODate | undefined;
+      for (const d of ctx.days)
+        for (const s of ctx.shifts) {
+          if (!shiftIds.has(s.id) || !(ctx.config.demand[weekday(d)]?.[s.id]?.ideal > 0)) continue;
+          if (!ids.some((id) => assignments[id]?.[d] === s.id)) {
+            bad.push(`${formatDateShort(d)} ${s.name.toLowerCase()}`);
+            first ??= d;
+          }
+        }
+      if (bad.length)
+        out.push({
+          severity: 'aviso',
+          code: 'RESTRICAO_GRUPO',
+          date: first,
+          title: `${bad.length} turno(s) sem ninguém de: ${names(ids)}`,
+          detail: `Pela restrição cadastrada, pelo menos 1 deles deveria estar em cada turno. Faltou em: ${bad.slice(0, 8).join(', ')}${bad.length > 8 ? '…' : ''}.`,
+          suggestion: rs.note ? `Motivo: ${rs.note}` : undefined,
+        });
+    }
+  }
+  return out;
+}
+
 /** Regras de férias que dá para conferir pela escala. */
 export function reviewVacations(ctx: PlanContext): Issue[] {
   const out: Issue[] = [];
@@ -334,8 +406,10 @@ export function reviewVacations(ctx: PlanContext): Issue[] {
   // Madrugada: quantas pessoas precisam estar disponíveis para cobrir todas as noites
   const workDays = 7 - ctx.config.rules.restDaysPerWeek;
   const nightShifts = ctx.shifts.filter((s) => s.team === 'noite');
-  const maxNight = Math.max(0, ...Object.values(ctx.config.demand).map((d) => nightShifts.reduce((acc, s) => acc + (d[s.id]?.ideal ?? 0), 0)));
-  const needNight = Math.ceil((maxNight * 7) / workDays);
+  // Turnos mínimos de madrugada na semana ÷ dias de trabalho de cada pessoa = pessoas necessárias.
+  const weeklyNightMin = Object.values(ctx.config.demand).reduce((acc, d) => acc + nightShifts.reduce((a, s) => a + (d[s.id]?.min ?? 0), 0), 0);
+  const maxNight = Math.max(0, ...Object.values(ctx.config.demand).map((d) => nightShifts.reduce((acc, s) => acc + (d[s.id]?.min ?? 0), 0)));
+  const needNight = Math.ceil(weeklyNightMin / workDays);
   const night = ctx.employees.filter((e) => e.team === 'noite');
   const shortNight = ctx.days.filter((d) => night.filter((e) => !absenceOn(e, d)).length < needNight);
   if (needNight > 0 && shortNight.length > 0) {

@@ -1,22 +1,47 @@
 rules_version = '2';
 
-// Só as contas do Google listadas abaixo podem ler e alterar a escala.
-// ATENÇÃO: este repositório é público. NÃO coloque os e-mails reais neste arquivo.
-// Copie este conteúdo para o Console do Firebase > Firestore Database > Regras,
-// troque os e-mails de exemplo LÁ e clique em Publicar.
+// Regras do banco de dados (Firestore). Cole este conteúdo em:
+// Console do Firebase > Firestore Database > Regras > Publicar.
+//
+// Cada posto fica em postos/{postoId}, com a lista "members" de e-mails que têm acesso.
+// Quem entra pela primeira vez ganha o próprio posto (postoId = uid) e vira dono.
+// Só o dono pode mudar a lista de e-mails. Não é preciso colocar e-mail nenhum aqui.
 service cloud.firestore {
   match /databases/{database}/documents {
-    function autorizado() {
-      return request.auth != null
-        && request.auth.token.email_verified == true
-        && request.auth.token.email in [
-          'email-da-mae@gmail.com',
-          'seu-email@gmail.com'
-        ];
+    function signedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+    function isMember(postoId) {
+      return signedIn()
+        && myEmail() in get(/databases/$(database)/documents/postos/$(postoId)).data.members;
     }
 
-    match /postos/principal/{document=**} {
-      allow read, write: if autorizado();
+    match /postos/{postoId} {
+      allow get, list: if signedIn() && myEmail() in resource.data.members;
+
+      allow create: if signedIn()
+        && postoId == request.auth.uid
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerEmail == myEmail()
+        && request.resource.data.members == [myEmail()];
+
+      // Só o dono muda a lista de acesso; o dono nunca sai da lista.
+      allow update: if signedIn()
+        && request.auth.uid == resource.data.ownerUid
+        && request.resource.data.ownerUid == resource.data.ownerUid
+        && request.resource.data.ownerEmail == resource.data.ownerEmail
+        && resource.data.ownerEmail in request.resource.data.members
+        && request.resource.data.members.size() <= 20;
+
+      allow delete: if false;
+
+      // Configurações, funcionários e escalas do posto: qualquer e-mail com acesso.
+      match /{document=**} {
+        allow read, write: if isMember(postoId);
+      }
     }
   }
 }

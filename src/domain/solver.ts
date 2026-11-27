@@ -17,6 +17,7 @@ export const WEIGHTS = {
   work: -3, // incentivo a usar as horas contratadas
   overtimeHour: 40, // cada hora extra semanal
   pairedRest: -0.5, // folgas emendadas (dois dias seguidos)
+  groupMissing: 300, // turno sem ninguém de um grupo "pelo menos 1" (restrição)
   shiftChange: 3, // cada troca manhã <-> tarde (evita troca todo dia; prefere blocos)
   balance: 0.3, // diferença entre nº de manhãs e tardes da pessoa no mês (rodízio justo)
 };
@@ -92,9 +93,21 @@ export function buildModel(ctx: PlanContext, schedule?: Schedule): BuiltModel {
   // Rodízio semanal: cada pessoa da equipe do dia alterna de turno a cada semana (seg–dom).
   const weekly = r.rotation === 'livre' ? new Map<string, Map<ISODate, string>>() : rotationPlan(ctx, plan);
 
+  const restrictions = ctx.config.restrictions ?? [];
+  const blockedWeekdays = new Map<string, Set<number>>();
+  for (const rs of restrictions) {
+    if (rs.type !== 'diaDeFolga') continue;
+    for (const id of rs.employeeIds) {
+      const set = blockedWeekdays.get(id) ?? new Set<number>();
+      (rs.weekdays ?? []).forEach((w) => set.add(w));
+      blockedWeekdays.set(id, set);
+    }
+  }
+
   ctx.employees.forEach((emp, ei) => {
     const allowed = allowedShifts(ctx, emp);
     const myWeeks = weekly.get(emp.id);
+    const blocked = blockedWeekdays.get(emp.id);
     plan.forEach((d, di) => {
       const g = H + di;
       const isLocked = !!locked[emp.id]?.[d];
@@ -103,6 +116,7 @@ export function buildModel(ctx: PlanContext, schedule?: Schedule): BuiltModel {
         const sid = myWeeks.get(d);
         options = allowed.filter((s) => s.id === sid);
       }
+      if (blocked?.has(weekday(d))) options = [];
       if (isLocked) {
         const sid = current[emp.id]?.[d];
         options = sid && ctx.shiftById.has(sid) ? [ctx.shiftById.get(sid)!] : [];
@@ -251,6 +265,35 @@ export function buildModel(ctx: PlanContext, schedule?: Schedule): BuiltModel {
       // y <= 1 - work(g)  e  y <= 1 - work(g+1)
       addRow(new Lin().add(y).addLin(work(ei, g)), '<=', 1);
       addRow(new Lin().add(y).addLin(work(ei, g + 1)), '<=', 1);
+    }
+  });
+
+  // Restrições entre funcionários
+  const empIndex = new Map(ctx.employees.map((e, i) => [e.id, i]));
+  restrictions.forEach((rs, ri) => {
+    const members = rs.employeeIds.map((id) => empIndex.get(id)).filter((i): i is number => i !== undefined);
+    if (rs.type === 'naoJuntos' && members.length >= 2) {
+      plan.forEach((_, di) => {
+        for (const s of ctx.shifts) {
+          const l = new Lin();
+          members.forEach((ei) => l.addLin(xs(ei, H + di, s.id)));
+          addRow(l, '<=', 1);
+        }
+      });
+    }
+    if (rs.type === 'peloMenosUm' && members.length >= 1) {
+      const shiftIds = new Set(members.flatMap((ei) => allowedShifts(ctx, ctx.employees[ei]).map((s) => s.id)));
+      plan.forEach((d, di) => {
+        for (const s of ctx.shifts) {
+          if (!shiftIds.has(s.id) || !(ctx.config.demand[weekday(d)]?.[s.id]?.ideal > 0)) continue;
+          const l = new Lin();
+          members.forEach((ei) => l.addLin(xs(ei, H + di, s.id)));
+          if (l.empty) continue;
+          const miss = `pm_${ri}_${di}_${ctx.shifts.indexOf(s)}`;
+          obj.add(miss, WEIGHTS.groupMissing);
+          addRow(l.add(miss), '>=', 1);
+        }
+      });
     }
   });
 

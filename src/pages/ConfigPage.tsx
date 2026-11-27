@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { MovementSection } from '../components/config/MovementSection';
+import { PostoSection } from '../components/config/PostoSection';
+import { RestrictionsSection } from '../components/config/RestrictionsSection';
 import { useConfirm } from '../components/Dialog';
 import { formatDate, minToHM, weekdayLong } from '../domain/dates';
 import { defaultConfig, legalWeeklyLimit } from '../domain/defaults';
@@ -19,11 +22,6 @@ export default function ConfigPage() {
   const setShift = (id: string, patch: Partial<Shift>) =>
     setDraft((d) => ({ ...d, shifts: d.shifts.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
   const setRule = <K extends keyof Rules>(k: K, v: Rules[K]) => setDraft((d) => ({ ...d, rules: { ...d.rules, [k]: v } }));
-  const setDemand = (wd: number, sid: string, field: 'ideal' | 'min', v: number) =>
-    setDraft((d) => ({
-      ...d,
-      demand: { ...d.demand, [wd]: { ...d.demand[wd], [sid]: { ...(d.demand[wd]?.[sid] ?? { ideal: 0, min: 0 }), [field]: v } } },
-    }));
 
   const save = async () => {
     await saveConfig(draft);
@@ -31,7 +29,6 @@ export default function ConfigPage() {
     setTimeout(() => setSaved(false), 2500);
   };
 
-  const weeklyTotal = (sid: string) => WEEK_ORDER.reduce((acc, wd) => acc + (draft.demand[wd]?.[sid]?.ideal ?? 0), 0);
   const year = new Date().getFullYear();
   const [hol, setHol] = useState({ date: '', name: '' });
   const today = new Date().toISOString().slice(0, 10);
@@ -45,8 +42,8 @@ export default function ConfigPage() {
           <button
             className="btn"
             onClick={async () => {
-              if (await ask({ title: 'Restaurar o padrão?', message: 'Todas as configurações voltam para o padrão sugerido (os feriados municipais são mantidos). Depois clique em Salvar.', confirmLabel: 'Restaurar' }))
-                setDraft({ ...defaultConfig(), customHolidays: draft.customHolidays });
+              if (await ask({ title: 'Restaurar o padrão?', message: 'Todas as configurações voltam para o padrão sugerido (nome do posto, restrições e feriados municipais são mantidos). Depois clique em Salvar.', confirmLabel: 'Restaurar' }))
+                setDraft({ ...defaultConfig(), businessName: draft.businessName, restrictions: draft.restrictions, customHolidays: draft.customHolidays });
             }}
           >
             Restaurar padrão
@@ -61,6 +58,8 @@ export default function ConfigPage() {
       </div>
 
       {confirmDialog}
+      <PostoSection draft={draft} setDraft={setDraft} />
+
       {/* TURNOS */}
       <section className="card">
         <h2 className="mb-1 text-lg font-bold">Turnos e intervalos</h2>
@@ -138,56 +137,7 @@ export default function ConfigPage() {
         </div>
       </section>
 
-      {/* DEMANDA */}
-      <section className="card">
-        <h2 className="mb-1 text-lg font-bold">Pessoas por turno</h2>
-        <p className="mb-4 text-sm text-slate-600">
-          <b>Ideal</b> é o que o gerador tenta alcançar. <b>Mínimo</b> é o limite de segurança — abaixo dele o revisor dá alerta. A madrugada
-          nunca deve ter menos de 2 pessoas.
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-600">
-                <th className="py-2 pr-2">Dia</th>
-                {draft.shifts.map((s) => (
-                  <th key={s.id} className="py-2 pr-2">
-                    {s.name} <span className="font-normal">(ideal / mínimo)</span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {WEEK_ORDER.map((wd) => (
-                <tr key={wd} className="border-t border-slate-100">
-                  <td className="py-1.5 pr-2 font-medium">{weekdayLong(wd)}</td>
-                  {draft.shifts.map((s) => (
-                    <td key={s.id} className="py-1.5 pr-2">
-                      <div className="flex items-center gap-1">
-                        <NumberInput value={draft.demand[wd]?.[s.id]?.ideal ?? 0} onChange={(v) => setDemand(wd, s.id, 'ideal', v)} />
-                        <span className="text-slate-400">/</span>
-                        <NumberInput value={draft.demand[wd]?.[s.id]?.min ?? 0} onChange={(v) => setDemand(wd, s.id, 'min', v)} />
-                      </div>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              <tr className="border-t-2 border-slate-200 font-semibold">
-                <td className="py-2 pr-2">Turnos por semana</td>
-                {draft.shifts.map((s) => (
-                  <td key={s.id} className="py-2 pr-2">
-                    {weeklyTotal(s.id)}
-                  </td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p className="mt-2 text-xs text-slate-500">
-          Cada funcionário faz 5 turnos por semana. Ex.: 5 pessoas na manhã cobrem 25 turnos. Se o ideal somar mais do que isso, algum dia vai
-          ficar abaixo do ideal.
-        </p>
-      </section>
+      <MovementSection draft={draft} setDraft={setDraft} />
 
       {/* REGRAS */}
       <section className="card">
@@ -293,12 +243,14 @@ export default function ConfigPage() {
         </div>
       </section>
 
+      <RestrictionsSection draft={draft} setDraft={setDraft} />
+
       {/* FERIADOS */}
       <section className="card">
         <h2 className="mb-1 text-lg font-bold">Feriados</h2>
         <p className="mb-3 text-sm text-slate-600">
           Feriado trabalhado é pago em dobro e não pode ser compensado com folga (convenção cl. 6.4). Os feriados nacionais e o de SP (9 de
-          julho) já estão incluídos. <b>Cadastre aqui os feriados municipais de Francisco Morato</b> (confira no site da prefeitura).
+          julho) já estão incluídos. <b>Cadastre aqui os feriados municipais da sua cidade</b> (confira no site da prefeitura).
         </p>
         <div className="grid gap-4 md:grid-cols-2">
           <div>
@@ -351,19 +303,6 @@ export default function ConfigPage() {
         </div>
       </section>
     </div>
-  );
-}
-
-function NumberInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  return (
-    <input
-      type="number"
-      min={0}
-      max={20}
-      className="input w-16 px-2 py-1 text-center"
-      value={value}
-      onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
-    />
   );
 }
 

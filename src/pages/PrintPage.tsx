@@ -12,6 +12,7 @@ const ABS: Record<string, string> = { ferias: 'FÉR', atestado: 'AT', afastament
 export default function PrintPage() {
   const { month = '' } = useParams();
   const { schedule, loading, ctx, issues } = useMonthSchedule(month);
+  const businessName = ctx.config.businessName?.trim();
   const sheet = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
 
@@ -61,7 +62,10 @@ export default function PrintPage() {
       <div ref={sheet} className="mx-auto max-w-[1400px] bg-white p-6 print:max-w-none print:p-0">
         <div className="mb-3 flex items-end justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Escala de trabalho — {formatMonth(month)}</h1>
+            <h1 className="text-2xl font-bold">
+              Escala de trabalho — {formatMonth(month)}
+              {businessName ? ` · ${businessName}` : ''}
+            </h1>
             <p className="text-sm text-slate-600">Regime 5x2 · duas folgas por semana</p>
           </div>
           <div className="text-right text-xs text-slate-600">

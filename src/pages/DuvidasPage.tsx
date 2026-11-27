@@ -116,7 +116,7 @@ export default function DuvidasPage() {
         <Faq q="E se alguém trabalhar no feriado?">
           <p>
             Recebe o dia em dobro. Pela convenção (cl. 6.4), <b>não dá para compensar com folga</b>: tem que pagar. O revisor lista os feriados
-            trabalhados para lembrar a folha de pagamento. Os feriados municipais de Francisco Morato precisam ser cadastrados em
+            trabalhados para lembrar a folha de pagamento. Os feriados municipais da sua cidade precisam ser cadastrados em
             Configurações.
           </p>
         </Faq>
@@ -124,7 +124,7 @@ export default function DuvidasPage() {
           <p>
             Por causa da hora noturna reduzida (cada hora entre 22h e 5h conta 52min30s). Com 30 minutos de intervalo, a madrugada conta 8h34
             por noite e passa de 42h na semana. Com 1h, conta 8h00 e fica em 40h, sem hora extra. Veja a explicação completa em{' '}
-            <Link to="/24h-com-13">Como manter 24h</Link>.
+            <Link to="/como-manter-24h">Como manter 24h</Link>.
           </p>
         </Faq>
         <Faq q="O que muda em dezembro de 2027?">

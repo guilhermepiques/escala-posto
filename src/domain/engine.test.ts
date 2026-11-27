@@ -152,3 +152,27 @@ describe('férias no revisor', () => {
     expect(codes.has('FERIAS_MADRUGADA')).toBe(true);
   });
 });
+
+describe('restrições configuráveis', () => {
+  it('respeita dia de folga fixo, pessoas que não trabalham juntas e "pelo menos 1"', () => {
+    const emps = sampleEmployees();
+    const cfg = defaultConfig();
+    cfg.restrictions = [
+      { id: 'r1', type: 'diaDeFolga', employeeIds: [emps[0].id], weekdays: [0, 6] },
+      { id: 'r2', type: 'naoJuntos', employeeIds: [emps[1].id, emps[3].id] },
+      { id: 'r3', type: 'peloMenosUm', employeeIds: [emps[10].id, emps[11].id] },
+    ];
+    const ctx = buildContext('2026-12', emps, cfg, undefined);
+    const out = solveWith(highs, ctx);
+    expect(out.ok).toBe(true);
+    for (const d of ctx.days) {
+      const wd = new Date(d + 'T12:00:00Z').getUTCDay();
+      if (wd === 0 || wd === 6) expect(out.assignments[emps[0].id]?.[d]).toBeUndefined();
+      const a = out.assignments[emps[1].id]?.[d];
+      if (a) expect(out.assignments[emps[3].id]?.[d]).not.toBe(a);
+    }
+    const codes = review(ctx, out.assignments).filter((i) => i.severity !== 'aviso').map((i) => i.code);
+    expect(codes.filter((c) => c.startsWith('RESTRICAO'))).toEqual([]);
+    expect(summarize(review(ctx, out.assignments)).erro).toBe(0);
+  }, 60000);
+});
