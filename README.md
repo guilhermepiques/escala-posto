@@ -1,4 +1,4 @@
-# Escala do Posto
+# EscalApp
 
 Aplicação web para montar a escala de trabalho de um posto de combustível 24h no regime **5x2**
 (fim da escala 6x1 — EC 141/2026, Portaria MTE 2.041/2026), respeitando a CLT e a Convenção Coletiva
@@ -42,12 +42,12 @@ Sem as variáveis do Firebase o site roda em **modo local** (dados guardados só
 1. Acesse <https://console.firebase.google.com> e crie um projeto (pode desativar o Google Analytics).
 2. **Authentication** → Começar → Método de login → ative **Google**.
 3. **Firestore Database** → Criar banco de dados → modo de produção → região `southamerica-east1` (São Paulo).
-4. Em **Firestore → Regras**, cole o conteúdo de [`firestore.rules`](firestore.rules) do jeito que está e publique
-   (não precisa colocar e-mail nenhum).
+4. As regras de segurança ([`firestore.rules`](firestore.rules)) são publicadas junto com o site pelo
+   `npm run deploy` (não precisa colocar e-mail nenhum).
 5. **Configurações do projeto** → Seus apps → adicione um app **Web** (`</>`) e copie os valores do `firebaseConfig`.
 6. Copie `.env.example` para `.env.local` e preencha.
-7. Depois do deploy, em **Authentication → Configurações → Domínios autorizados**, adicione o domínio da Vercel
-   (ex.: `escala-posto.vercel.app`).
+7. Se usar um domínio próprio, adicione-o em **Authentication → Configurações → Domínios autorizados**
+   (`*.web.app` e `*.firebaseapp.com` já vêm liberados).
 
 O plano gratuito (Spark) é mais que suficiente e não desliga por falta de uso.
 
@@ -57,12 +57,16 @@ O plano gratuito (Spark) é mais que suficiente e não desliga por falta de uso.
 - O dono libera outros e-mails em **Configurações → Posto e acesso**; quem for liberado entra com a própria conta
   do Google e vê a mesma escala. Quem tem acesso a mais de um posto troca pelo seletor no topo.
 
-## Publicar na Vercel
+## Publicar (Firebase Hosting)
 
-1. Suba o projeto no GitHub.
-2. Na Vercel: **Add New → Project** → importe o repositório (detecta Vite sozinho).
-3. Em **Environment Variables**, cadastre as 6 variáveis `VITE_FIREBASE_*`.
-4. Deploy. O `vercel.json` já cuida das rotas da aplicação.
+O site fica em <https://escala-posto-80784.web.app>. Para publicar uma nova versão:
+
+```bash
+npx firebase login   # só na primeira vez (no PowerShell: npx.cmd firebase login)
+npm run deploy       # gera o site com o .env.local e publica site + regras do banco
+```
+
+O projeto usado está em [`.firebaserc`](.firebaserc); rotas, cache e regras em [`firebase.json`](firebase.json).
 
 ## Estrutura
 

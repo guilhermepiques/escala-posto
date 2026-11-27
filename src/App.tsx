@@ -77,7 +77,7 @@ function Header() {
         <div className="flex items-center gap-2">
           <img src="/favicon.svg" alt="" className="h-8 w-8 rounded-lg ring-2 ring-white/30" />
           <div className="leading-tight">
-            <div className="text-lg font-bold">Escala do Posto</div>
+            <div className="text-lg font-bold">EscalApp</div>
             {config.businessName && <div className="text-xs text-brand-100">{config.businessName}</div>}
           </div>
         </div>

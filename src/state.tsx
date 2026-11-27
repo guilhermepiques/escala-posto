@@ -233,7 +233,7 @@ function LoginScreen() {
     <FullScreen>
       <div className="mx-auto max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <img src="/favicon.svg" alt="" className="mx-auto mb-4 h-14 w-14" />
-        <h1 className="mb-2 text-2xl font-bold text-slate-900">Escala do Posto</h1>
+        <h1 className="mb-2 text-2xl font-bold text-slate-900">EscalApp</h1>
         <p className="mb-6 text-slate-600">Entre com a conta do Google autorizada para montar a escala.</p>
         <button
           className="btn btn-primary w-full"
