@@ -1,0 +1,61 @@
+# Publica o site no Firebase Hosting a cada push na branch main.
+# Roda os testes antes: se algum falhar, nada é publicado e o site continua na versão anterior.
+#
+# Segredos usados (GitHub > Settings > Secrets and variables > Actions):
+#   FIREBASE_SERVICE_ACCOUNT_ESCALA_POSTO_80784  criado pelo "firebase init hosting:github"
+#   VITE_FIREBASE_*                              as mesmas 6 chaves do .env.local
+#
+# As regras do banco (firestore.rules) não são publicadas aqui: quando mudarem, rode "npm run deploy".
+
+name: Publicar no Firebase Hosting
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-live
+  cancel-in-progress: false
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      - name: Testes
+        run: npm test
+
+      - name: Gerar o site
+        run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+
+      - name: Conferir as chaves do Firebase
+        run: |
+          if ! grep -rq "escala-posto-80784" dist/assets; then
+            echo "::error::O site foi gerado sem as chaves do Firebase (segredos VITE_FIREBASE_* faltando no GitHub)."
+            exit 1
+          fi
+
+      - name: Publicar
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ESCALA_POSTO_80784 }}
+          channelId: live
+          projectId: escala-posto-80784

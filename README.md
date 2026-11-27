@@ -59,7 +59,17 @@ O plano gratuito (Spark) é mais que suficiente e não desliga por falta de uso.
 
 ## Publicar (Firebase Hosting)
 
-O site fica em <https://escala-posto-80784.web.app>. Para publicar uma nova versão:
+O site fica em <https://escala-posto-80784.web.app>.
+
+**Automático:** cada `git push` na branch `main` roda os testes e, se passarem, publica o site
+([`.github/workflows/firebase-hosting-merge.yml`](.github/workflows/firebase-hosting-merge.yml)). O andamento
+aparece na aba **Actions** do GitHub. O GitHub precisa dos segredos `VITE_FIREBASE_*` (mesmos valores do `.env.local`):
+
+```bash
+gh secret set -f .env.local
+```
+
+**Manual** (também publica as regras do banco, que o automático não publica):
 
 ```bash
 npx firebase login   # só na primeira vez (no PowerShell: npx.cmd firebase login)
