@@ -190,6 +190,12 @@ export async function getBusinessName(postoId: string): Promise<string | undefin
 
 type Op = (b: ReturnType<typeof writeBatch>) => void;
 
+/**
+ * Avisa também quando só muda a origem (cache → servidor). Sem isto, uma lista vazia lida do cache e confirmada
+ * vazia pelo servidor nunca gera um segundo aviso — e a tela ficava em "Carregando dados…" para sempre.
+ */
+const WITH_SERVER_CONFIRMATION = { includeMetadataChanges: true } as const;
+
 /** Grava em lotes (o Firestore aceita até 500 operações por lote). */
 async function commitAll(db: Firestore, ops: Op[]) {
   for (let i = 0; i < ops.length; i += 400) {
@@ -226,6 +232,7 @@ export function createFirebaseStore(postoId: string, opts: StoreOptions): Store 
     watchConfig(cb, onError) {
       return onSnapshot(
         configRef,
+        WITH_SERVER_CONFIRMATION,
         (snap) => {
           // Sem o documento no cache local, espera a resposta do servidor antes de concluir que não existe.
           if (!snap.exists()) return snap.metadata.fromCache ? undefined : cb(null);
@@ -240,6 +247,7 @@ export function createFirebaseStore(postoId: string, opts: StoreOptions): Store 
     watchEmployees(cb, onError) {
       return onSnapshot(
         collection(db, `${root}/employees`),
+        WITH_SERVER_CONFIRMATION,
         (snap) => {
           if (snap.empty && snap.metadata.fromCache) return;
           cb(snap.docs.map((d) => splitMeta<Employee>(d.data(), onTooNew).data));
@@ -268,6 +276,7 @@ export function createFirebaseStore(postoId: string, opts: StoreOptions): Store 
     watchSchedule(month, cb, onError) {
       return onSnapshot(
         schedRef(month),
+        WITH_SERVER_CONFIRMATION,
         (snap) => {
           if (!snap.exists()) return snap.metadata.fromCache ? undefined : cb(null, null);
           const { data, meta } = splitMeta<Schedule>(snap.data(), onTooNew);
