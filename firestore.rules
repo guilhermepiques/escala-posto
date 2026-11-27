@@ -1,0 +1,22 @@
+rules_version = '2';
+
+// Só as contas do Google listadas abaixo podem ler e alterar a escala.
+// ATENÇÃO: este repositório é público. NÃO coloque os e-mails reais neste arquivo.
+// Copie este conteúdo para o Console do Firebase > Firestore Database > Regras,
+// troque os e-mails de exemplo LÁ e clique em Publicar.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function autorizado() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email in [
+          'email-da-mae@gmail.com',
+          'seu-email@gmail.com'
+        ];
+    }
+
+    match /postos/principal/{document=**} {
+      allow read, write: if autorizado();
+    }
+  }
+}
