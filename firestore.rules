@@ -1,11 +1,14 @@
 rules_version = '2';
 
-// Regras do banco de dados (Firestore). Cole este conteúdo em:
-// Console do Firebase > Firestore Database > Regras > Publicar.
+// Regras do banco de dados (Firestore). São publicadas junto com o site pelo `npm run deploy`.
 //
-// Cada posto fica em postos/{postoId}, com a lista "members" de e-mails que têm acesso.
-// Quem entra pela primeira vez ganha o próprio posto (postoId = uid) e vira dono.
-// Só o dono pode mudar a lista de e-mails. Não é preciso colocar e-mail nenhum aqui.
+// Cada posto fica em postos/{postoId}:
+//   members = e-mails que podem ENTRAR (ver a escala);
+//   editors = e-mails que podem MUDAR (sempre dentro de members). Postos antigos sem `editors`: todos de members editam.
+// Quem entra pela primeira vez ganha o próprio posto (postoId = uid) e vira dono. Só o dono muda as listas.
+//
+// Administrador da plataforma: documento admins/{uid} criado à mão no Console (nada de e-mail aqui).
+// Versão mínima: plataforma/app.minSchemaVersion — gravações com schemaVersion menor são recusadas.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() {
@@ -14,33 +17,80 @@ service cloud.firestore {
     function myEmail() {
       return request.auth.token.email.lower();
     }
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function postoData(postoId) {
+      return get(/databases/$(database)/documents/postos/$(postoId)).data;
+    }
+    function editorsOf(d) {
+      return d.get('editors', d.members);
+    }
     function isMember(postoId) {
-      return signedIn()
-        && myEmail() in get(/databases/$(database)/documents/postos/$(postoId)).data.members;
+      return signedIn() && myEmail() in postoData(postoId).members;
+    }
+    function isEditor(postoId) {
+      return signedIn() && myEmail() in editorsOf(postoData(postoId));
+    }
+    function minSchema() {
+      return exists(/databases/$(database)/documents/plataforma/app)
+        ? get(/databases/$(database)/documents/plataforma/app).data.get('minSchemaVersion', 0)
+        : 0;
+    }
+    // O app grava o número do formato dos dados; apps velhos demais são recusados.
+    function versionOk() {
+      return request.resource.data.get('schemaVersion', 0) >= minSchema();
+    }
+    // Ninguém grava em nome de outra pessoa.
+    function authorOk() {
+      return request.resource.data.get('updatedBy', myEmail()) == myEmail();
+    }
+
+    // Cada um só consegue ver se é administrador (o documento é criado à mão no Console).
+    match /admins/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, write: if false;
+    }
+
+    // Configuração geral (versão mínima, aviso). Todos leem; só o administrador muda.
+    match /plataforma/{docId} {
+      allow get: if signedIn();
+      allow list, delete: if false;
+      allow create, update: if isAdmin()
+        && docId == 'app'
+        && request.resource.data.minSchemaVersion is int
+        && request.resource.data.minSchemaVersion >= 0;
     }
 
     match /postos/{postoId} {
-      allow get, list: if signedIn() && myEmail() in resource.data.members;
+      allow get, list: if (signedIn() && myEmail() in resource.data.members) || isAdmin();
 
       allow create: if signedIn()
         && postoId == request.auth.uid
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.ownerEmail == myEmail()
-        && request.resource.data.members == [myEmail()];
+        && request.resource.data.members == [myEmail()]
+        && request.resource.data.get('editors', [myEmail()]) == [myEmail()];
 
-      // Só o dono muda a lista de acesso; o dono nunca sai da lista.
+      // Só o dono muda as listas; o dono nunca sai e sempre pode editar; quem edita também está em members.
       allow update: if signedIn()
         && request.auth.uid == resource.data.ownerUid
         && request.resource.data.ownerUid == resource.data.ownerUid
         && request.resource.data.ownerEmail == resource.data.ownerEmail
         && resource.data.ownerEmail in request.resource.data.members
+        && resource.data.ownerEmail in editorsOf(request.resource.data)
+        && editorsOf(request.resource.data).toSet().difference(request.resource.data.members.toSet()).size() == 0
         && request.resource.data.members.size() <= 20;
 
       allow delete: if false;
 
-      // Configurações, funcionários e escalas do posto: qualquer e-mail com acesso.
-      match /{document=**} {
-        allow read, write: if isMember(postoId);
+      // Configurações, funcionários, escalas, histórico e lixeira do posto.
+      // Atenção: `/{document=**}` sozinho também pegaria o próprio postos/{postoId} (zero níveis) e deixaria
+      // qualquer editor mudar a lista de acesso. Por isso exige pelo menos uma subcoleção.
+      match /{subcolecao}/{document=**} {
+        allow read: if isMember(postoId) || isAdmin();
+        allow create, update: if isEditor(postoId) && versionOk() && authorOk();
+        allow delete: if isEditor(postoId);
       }
     }
   }

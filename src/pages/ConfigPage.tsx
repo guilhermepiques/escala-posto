@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { DataSection } from '../components/config/DataSection';
 import { MovementSection } from '../components/config/MovementSection';
 import { PostoSection } from '../components/config/PostoSection';
 import { RestrictionsSection } from '../components/config/RestrictionsSection';
@@ -8,25 +9,43 @@ import { defaultConfig, legalWeeklyLimit } from '../domain/defaults';
 import { builtInHolidays } from '../domain/holidays';
 import { shiftHours } from '../domain/hours';
 import type { AppConfig, Rules, Shift } from '../domain/types';
+import { sameConfig } from '../domain/compare';
 import { useApp } from '../state';
 
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 
 export default function ConfigPage() {
-  const { config, saveConfig } = useApp();
+  const { config, saveConfig, canEdit, store } = useApp();
   const [draft, setDraft] = useState<AppConfig>(config);
   const [saved, setSaved] = useState(false);
+  const [saveErr, setSaveErr] = useState<string | null>(null);
   const [confirmDialog, ask] = useConfirm();
-  const dirty = JSON.stringify(draft) !== JSON.stringify(config);
+  const dirty = !sameConfig(draft, config);
+
+  // Se outra pessoa mudar as configurações e aqui não há nada sendo editado, mostra a versão nova.
+  const lastConfig = useRef(config);
+  useEffect(() => {
+    const prev = lastConfig.current;
+    lastConfig.current = config;
+    if (prev === config) return;
+    setDraft((d) => (sameConfig(d, prev) ? config : d));
+  }, [config]);
 
   const setShift = (id: string, patch: Partial<Shift>) =>
     setDraft((d) => ({ ...d, shifts: d.shifts.map((s) => (s.id === id ? { ...s, ...patch } : s)) }));
   const setRule = <K extends keyof Rules>(k: K, v: Rules[K]) => setDraft((d) => ({ ...d, rules: { ...d.rules, [k]: v } }));
 
   const save = async () => {
-    await saveConfig(draft);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setSaveErr(null);
+    try {
+      // A versão de antes fica no histórico (Segurança dos dados → Versões anteriores).
+      await store.addHistory('config', 'config', 'Antes de salvar alterações', config).catch(() => undefined);
+      await saveConfig(draft);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      setSaveErr(`Não foi possível salvar: ${(e as Error).message}`);
+    }
   };
 
   const year = new Date().getFullYear();
@@ -39,6 +58,10 @@ export default function ConfigPage() {
         <h1 className="text-2xl font-bold">Configurações</h1>
         <div className="ml-auto flex items-center gap-2">
           {saved && <span className="text-sm text-emerald-700">✓ Salvo</span>}
+          {saveErr && <span className="text-sm text-red-700">{saveErr}</span>}
+          {!canEdit && <span className="text-sm text-slate-600">Você só pode ver as configurações.</span>}
+          {canEdit && (
+          <>
           <button
             className="btn"
             onClick={async () => {
@@ -54,11 +77,15 @@ export default function ConfigPage() {
           <button className="btn btn-primary" disabled={!dirty} onClick={save}>
             Salvar alterações
           </button>
+          </>
+          )}
         </div>
       </div>
 
       {confirmDialog}
-      <PostoSection draft={draft} setDraft={setDraft} />
+      <PostoSection draft={draft} setDraft={setDraft} disabled={!canEdit} />
+
+      <fieldset disabled={!canEdit} className="m-0 min-w-0 space-y-6 border-0 p-0">
 
       {/* TURNOS */}
       <section className="card">
@@ -302,6 +329,9 @@ export default function ConfigPage() {
           </div>
         </div>
       </section>
+      </fieldset>
+
+      <DataSection />
     </div>
   );
 }

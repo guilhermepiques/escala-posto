@@ -35,6 +35,14 @@ jobs:
       - name: Testes
         run: npm test
 
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Testes das regras do banco (emulador)
+        run: npm run test:rules
+
       - name: Gerar o site
         run: npm run build
         env:

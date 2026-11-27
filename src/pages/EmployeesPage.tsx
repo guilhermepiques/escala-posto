@@ -17,7 +17,7 @@ const TEAMS: Array<{ id: Team; title: string; desc: string }> = [
 ];
 
 export default function EmployeesPage() {
-  const { employees, config, saveEmployee, deleteEmployee } = useApp();
+  const { employees, config, saveEmployee, deleteEmployee, canEdit } = useApp();
   const [editing, setEditing] = useState<Employee | null>(null);
   const workDays = 7 - config.rules.restDaysPerWeek;
 
@@ -33,12 +33,14 @@ export default function EmployeesPage() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-bold">Funcionários</h1>
         <span className="text-sm text-slate-600">{employees.filter((e) => e.active).length} ativos</span>
-        <button
-          className="btn btn-primary ml-auto"
-          onClick={() => setEditing({ id: newId(), name: '', female: false, team: 'dia', active: true, absences: [] })}
-        >
-          + Adicionar funcionário
-        </button>
+        {canEdit && (
+          <button
+            className="btn btn-primary ml-auto"
+            onClick={() => setEditing({ id: newId(), name: '', female: false, team: 'dia', active: true, absences: [] })}
+          >
+            + Adicionar funcionário
+          </button>
+        )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
@@ -70,7 +72,7 @@ export default function EmployeesPage() {
         cadastro. <Link className="underline" to="/duvidas">Saiba mais</Link>
       </div>
 
-      {employees.length === 0 && (
+      {employees.length === 0 && canEdit && (
         <div className="card text-center">
           <p className="mb-3 text-slate-700">Nenhum funcionário cadastrado ainda.</p>
           <button
@@ -94,7 +96,11 @@ export default function EmployeesPage() {
             </h2>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {list.map((e) => (
-                <button key={e.id} className="card text-left transition hover:border-brand-600" onClick={() => setEditing(e)}>
+                <button
+                  key={e.id}
+                  className={`card text-left transition ${canEdit ? 'hover:border-brand-600' : 'cursor-default'}`}
+                  onClick={() => canEdit && setEditing(e)}
+                >
                   <div className="flex flex-wrap items-center gap-2">
                     <span className={`font-semibold ${e.active ? '' : 'text-slate-400 line-through'}`}>{e.name}</span>
                     {e.female && <span className="rounded bg-pink-100 px-1.5 text-xs text-pink-700">mulher</span>}
@@ -130,8 +136,8 @@ export default function EmployeesPage() {
             await saveEmployee(e);
             setEditing(null);
           }}
-          onDelete={async (id) => {
-            await deleteEmployee(id);
+          onDelete={async (emp) => {
+            await deleteEmployee(emp);
             setEditing(null);
           }}
         />
@@ -151,7 +157,7 @@ function EmployeeDialog({
   isNew: boolean;
   onClose: () => void;
   onSave: (e: Employee) => void;
-  onDelete: (id: string) => void;
+  onDelete: (e: Employee) => void;
 }) {
   const { config } = useApp();
   const [e, setE] = useState<Employee>({ ...initial, absences: [...initial.absences] });
@@ -311,12 +317,13 @@ function EmployeeDialog({
                 if (
                   await ask({
                     title: `Excluir ${e.name}?`,
-                    message: 'Para quem saiu da empresa, prefira desmarcar “Ativo”, assim as escalas antigas continuam com o nome.',
+                    message:
+                      'Para quem saiu da empresa, prefira desmarcar “Ativo”, assim as escalas antigas continuam com o nome. Se excluir por engano, dá para restaurar em Configurações → Segurança dos dados.',
                     confirmLabel: 'Excluir',
                     danger: true,
                   })
                 )
-                  onDelete(e.id);
+                  onDelete(initial);
               }}
             >
               Excluir

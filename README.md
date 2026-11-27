@@ -55,8 +55,40 @@ O plano gratuito (Spark) é mais que suficiente e não desliga por falta de uso.
 ### Contas e acesso
 
 - Cada conta do Google que entra pela primeira vez ganha **o próprio posto** (dados separados) e vira **dono**.
-- O dono libera outros e-mails em **Configurações → Posto e acesso**; quem for liberado entra com a própria conta
-  do Google e vê a mesma escala. Quem tem acesso a mais de um posto troca pelo seletor no topo.
+- O dono libera outros e-mails em **Configurações → Posto e acesso**, escolhendo **Pode editar** ou **Só ver**
+  (ex.: diretoria acompanhando pelo celular). Quem for liberado entra com a própria conta do Google e vê a mesma
+  escala. Quem tem acesso a mais de um posto troca pelo seletor no topo. A trava é das regras do banco
+  ([`firestore.rules`](firestore.rules)), não só da tela. Postos criados antes disso (sem a lista `editors`) continuam
+  com todo mundo podendo editar até o dono mudar alguém para "Só ver".
+- Tudo atualiza **em tempo real**: se alguém muda a escala, as outras telas abertas mostram na hora, com
+  "Última alteração: fulano, data e hora".
+
+### Histórico e backup
+
+- **Escala:** antes de gerar de novo, limpar ou restaurar, a versão anterior é guardada; edições à mão guardam uma
+  versão a cada 30 minutos. Botão **🕘 Histórico** na escala do mês (últimas 30 versões por mês).
+- **Configurações:** cada "Salvar alterações" guarda a versão anterior (**Configurações → Segurança dos dados**).
+- **Funcionários excluídos** vão para uma lixeira e podem ser restaurados (mesma seção).
+- **Backup em arquivo** (`.json`): baixar e restaurar em **Configurações → Segurança dos dados**. Restaurar não apaga
+  nada de vez: o que existia vai para o histórico/lixeira.
+
+### Versões do app e administrador da plataforma
+
+- Cada gravação leva o número do **formato dos dados** (`SCHEMA_VERSION` em [`src/data/store.ts`](src/data/store.ts)).
+  Suba esse número só quando mudar o jeito de guardar os dados. Um app que encontra dados de formato mais novo
+  passa a só ver ("Esta versão do EscalApp está desatualizada").
+- O administrador define em **Admin → Versão mínima do app** o formato mínimo aceito: apps abaixo dele (ex.: um
+  `.exe` que não atualizou) ficam só para ver e o banco recusa a gravação deles. Fica em 0 até existir um formato 2.
+- **Como virar administrador (uma vez só):** no [Console do Firebase](https://console.firebase.google.com) →
+  Authentication → Users, copie o **UID** da sua conta. Depois Firestore Database → Iniciar coleção → ID da coleção
+  `admins` → ID do documento = o UID copiado → salve sem campos (ou com um campo qualquer). Recarregue o site: aparece
+  a aba **Admin**, com todos os postos (só para ver) e a versão mínima.
+
+### Testar as regras do banco
+
+```bash
+npm run test:rules   # precisa de Java; roda os testes de rules/ no emulador do Firestore
+```
 
 ## Publicar (Firebase Hosting)
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useConfirm } from '../components/Dialog';
 import { GenerateDialog } from '../components/GenerateDialog';
+import { HistoryDialog } from '../components/HistoryDialog';
 import { IssueList, SeverityBadge } from '../components/IssueList';
 import { ScheduleGrid } from '../components/ScheduleGrid';
 import { addMonths, currentMonth, formatMonth, formatTimestamp } from '../domain/dates';
@@ -10,16 +11,18 @@ import type { SolveRequest } from '../domain/solver.worker';
 import type { ISODate, Issue, Rules, Schedule } from '../domain/types';
 import { summarize } from '../domain/validator';
 import { useMonthSchedule } from '../hooks/useMonthSchedule';
+import type { HistoryEntry, Store } from '../data/store';
 import { useApp } from '../state';
 
 export default function SchedulePage() {
   const [params, setParams] = useSearchParams();
   const month = params.get('mes') ?? defaultMonth();
   const setMonth = (m: string) => setParams({ mes: m });
-  const { config, employees, saveConfig } = useApp();
+  const { config, employees, saveConfig, canEdit, store } = useApp();
   const [showGenerate, setShowGenerate] = useState(false);
   const [confirmDialog, ask] = useConfirm();
-  const { schedule, previous, loading, saveState, update, markReviewed, ctx, issues } = useMonthSchedule(month);
+  const { schedule, meta, previous, loading, saveState, update, markReviewed, restore, ctx, issues } = useMonthSchedule(month);
+  const [showHistory, setShowHistory] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [genMsg, setGenMsg] = useState<string | null>(null);
   const [showExport, setShowExport] = useState(false);
@@ -51,7 +54,7 @@ export default function SchedulePage() {
         setGenMsg(out.message ?? 'Não foi possível gerar a escala.');
         return;
       }
-      update((s) => ({ ...s, assignments: out.assignments, generatedAt: Date.now() }));
+      update((s) => ({ ...s, assignments: out.assignments, generatedAt: Date.now() }), { snapshot: 'Antes de gerar de novo' });
       setGenMsg(`Escala gerada em ${out.seconds.toFixed(1)} segundos.`);
     };
     w.onerror = (e) => {
@@ -95,7 +98,7 @@ export default function SchedulePage() {
       confirmLabel: 'Apagar',
       danger: true,
     });
-    if (ok) update((s) => ({ ...s, assignments: {}, locked: {} }));
+    if (ok) update((s) => ({ ...s, assignments: {}, locked: {} }), { snapshot: 'Antes de limpar o mês' });
   };
 
   const lockedCount = schedule ? Object.values(schedule.locked ?? {}).reduce((n, m) => n + Object.keys(m).length, 0) : 0;
@@ -112,25 +115,38 @@ export default function SchedulePage() {
             ▶
           </button>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowGenerate(true)} disabled={generating || loading || activeEmps.length === 0}>
-          {generating ? 'Calculando…' : hasAny ? '↻ Gerar de novo' : '⚡ Gerar escala automática'}
-        </button>
+        {canEdit && (
+          <button className="btn btn-primary" onClick={() => setShowGenerate(true)} disabled={generating || loading || activeEmps.length === 0}>
+            {generating ? 'Calculando…' : hasAny ? '↻ Gerar de novo' : '⚡ Gerar escala automática'}
+          </button>
+        )}
         <button className="btn" onClick={() => setShowExport(true)} disabled={!hasAny}>
           ✓ Revisar e exportar
         </button>
         <div className="ml-auto flex flex-wrap items-center gap-2 text-xs text-slate-500">
-          {lockedCount > 0 && (
+          {canEdit && lockedCount > 0 && (
             <button className="btn btn-sm" onClick={unlockAll}>
               🔓 Destravar tudo ({lockedCount})
             </button>
           )}
-          {hasAny && (
+          {canEdit && hasAny && (
             <button className="btn btn-sm" onClick={clearAll}>
               Limpar mês
             </button>
           )}
+          <button className="btn btn-sm" onClick={() => setShowHistory(true)} title="Versões anteriores desta escala">
+            🕘 Histórico
+          </button>
           <span>
-            {saveState === 'saving' ? 'Salvando…' : saveState === 'saved' ? '✓ Salvo' : saveState === 'error' ? '⚠ Erro ao salvar' : ''}
+            {saveState === 'saving'
+              ? 'Salvando…'
+              : saveState === 'error'
+                ? '⚠ Erro ao salvar'
+                : meta?.updatedAt
+                  ? `${saveState === 'saved' ? '✓ Salvo · ' : ''}Última alteração: ${meta.updatedByName ?? meta.updatedBy ?? ''}${meta.updatedByName || meta.updatedBy ? ', ' : ''}${formatTimestamp(meta.updatedAt)}`
+                  : saveState === 'saved'
+                    ? '✓ Salvo'
+                    : ''}
           </span>
         </div>
       </div>
@@ -166,6 +182,7 @@ export default function SchedulePage() {
               onSet={setCell}
               onToggleLock={toggleLock}
               highlight={highlight}
+              readOnly={!canEdit}
             />
             <Legend />
           </div>
@@ -203,6 +220,18 @@ export default function SchedulePage() {
       )}
       {confirmDialog}
 
+      {showHistory && (
+        <HistoryDialog<Schedule>
+          title={`Histórico — ${formatMonth(month)}`}
+          intro="Antes de gerar de novo, limpar ou restaurar, a versão anterior fica guardada aqui. Edições à mão guardam uma versão a cada 30 minutos. Ficam as últimas 30."
+          load={historyLoader(store, month)}
+          describe={(s) => `${countShifts(s)} turnos marcados`}
+          canRestore={canEdit}
+          onRestore={restore}
+          onClose={() => setShowHistory(false)}
+        />
+      )}
+
       {showExport && schedule && (
         <ExportDialog
           month={month}
@@ -215,6 +244,18 @@ export default function SchedulePage() {
     </div>
   );
 }
+
+const loaders = new WeakMap<object, Map<string, () => Promise<HistoryEntry<Schedule>[]>>>();
+/** Função estável por mês (a janela de histórico recarrega quando ela muda). */
+function historyLoader(store: Store, month: string) {
+  let m = loaders.get(store);
+  if (!m) loaders.set(store, (m = new Map()));
+  let f = m.get(month);
+  if (!f) m.set(month, (f = () => store.listHistory<Schedule>('schedule', month)));
+  return f;
+}
+
+const countShifts = (s: Schedule) => Object.values(s.assignments ?? {}).reduce((n, m) => n + Object.keys(m).length, 0);
 
 function todayISO() {
   const d = new Date();

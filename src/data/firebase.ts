@@ -9,21 +9,36 @@ import {
   type User,
 } from 'firebase/auth';
 import {
+  addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
   getDocs,
   initializeFirestore,
+  limit,
+  onSnapshot,
+  orderBy,
   persistentLocalCache,
+  persistentMultipleTabManager,
   query,
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type Firestore,
 } from 'firebase/firestore';
 import type { AppConfig, Employee, Schedule } from '../domain/types';
-import { clean, type Store } from './store';
+import {
+  clean,
+  HISTORY_LIMIT,
+  splitMeta,
+  stamp,
+  type HistoryEntry,
+  type HistoryKind,
+  type Store,
+  type StoreOptions,
+  type TrashedEmployee,
+} from './store';
 
 const env = import.meta.env;
 
@@ -47,8 +62,8 @@ function init() {
   if (!app) {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    // Cache local: continua funcionando se a internet cair por um momento.
-    db = initializeFirestore(app, { localCache: persistentLocalCache() });
+    // Cache local: continua funcionando se a internet cair por um momento (e com várias abas abertas).
+    db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
   }
   return { auth: auth!, db: db! };
 }
@@ -69,64 +84,247 @@ export async function logOut(): Promise<void> {
 }
 
 /**
- * Cada posto é um "espaço" separado: postos/{postoId}, com a lista de e-mails que têm acesso.
- * Quem cria a conta vira dono; o dono libera outros e-mails em Configurações.
+ * Cada posto é um "espaço" separado: postos/{postoId}.
+ * - members: e-mails que podem ENTRAR (ver).
+ * - editors: e-mails que podem MUDAR a escala, funcionários e configurações (sempre dentro de members).
+ * Postos antigos não têm `editors`: aí todos de `members` podem editar (como era antes).
  */
 export interface PostoInfo {
   id: string;
   ownerUid: string;
   ownerEmail: string;
   members: string[];
+  editors?: string[];
   createdAt?: number;
 }
 
 export const normEmail = (e: string) => e.trim().toLowerCase();
 
-/** Postos aos quais o usuário tem acesso. Se não tiver nenhum, cria o dele. */
-export async function loadPostos(user: User): Promise<PostoInfo[]> {
+/** Quem pode editar neste posto. */
+export const editorsOf = (p: PostoInfo) => p.editors ?? p.members;
+
+/** Configuração geral da plataforma (só o administrador muda). */
+export interface PlatformInfo {
+  /** Apps com formato de dados abaixo deste número ficam só para ver (e o banco recusa a gravação). */
+  minSchemaVersion: number;
+  /** Mensagem opcional mostrada para todos (ex.: "atualize o app"). */
+  message?: string;
+  updatedAt?: number;
+}
+
+/** O administrador da plataforma é marcado no Console do Firebase: coleção "admins", documento com o UID da conta. */
+export async function checkAdmin(user: User): Promise<boolean> {
+  const { db } = init();
+  try {
+    return (await getDoc(doc(db, 'admins', user.uid))).exists();
+  } catch {
+    return false;
+  }
+}
+
+export function watchPlatform(cb: (p: PlatformInfo) => void): () => void {
+  const { db } = init();
+  return onSnapshot(
+    doc(db, 'plataforma', 'app'),
+    (snap) => {
+      const d = snap.data() as Partial<PlatformInfo> | undefined;
+      cb({ minSchemaVersion: typeof d?.minSchemaVersion === 'number' ? d.minSchemaVersion : 0, message: d?.message, updatedAt: d?.updatedAt });
+    },
+    () => cb({ minSchemaVersion: 0 }),
+  );
+}
+
+export async function savePlatform(p: PlatformInfo): Promise<void> {
+  const { db } = init();
+  await setDoc(doc(db, 'plataforma', 'app'), clean({ ...p, updatedAt: Date.now() }));
+}
+
+/** Postos aos quais o usuário tem acesso (o administrador vê todos). Se não tiver nenhum próprio nem convite, cria o dele. */
+export async function loadPostos(user: User, admin: boolean): Promise<PostoInfo[]> {
   const { db } = init();
   const email = normEmail(user.email ?? '');
-  const snap = await getDocs(query(collection(db, 'postos'), where('members', 'array-contains', email)));
-  const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PostoInfo, 'id'>) }));
-  if (list.length > 0) return list;
-  const mine: Omit<PostoInfo, 'id'> = { ownerUid: user.uid, ownerEmail: email, members: [email], createdAt: Date.now() };
-  await setDoc(doc(db, 'postos', user.uid), mine);
-  return [{ id: user.uid, ...mine }];
+  const toInfo = (d: { id: string; data: () => unknown }) => ({ id: d.id, ...(d.data() as Omit<PostoInfo, 'id'>) });
+  const mineSnap = await getDocs(query(collection(db, 'postos'), where('members', 'array-contains', email)));
+  let list = mineSnap.docs.map(toInfo);
+  if (list.length === 0) {
+    const mine: Omit<PostoInfo, 'id'> = { ownerUid: user.uid, ownerEmail: email, members: [email], editors: [email], createdAt: Date.now() };
+    await setDoc(doc(db, 'postos', user.uid), mine);
+    list = [{ id: user.uid, ...mine }];
+  }
+  if (admin) {
+    const all = (await getDocs(collection(db, 'postos'))).docs.map(toInfo);
+    const ids = new Set(list.map((p) => p.id));
+    list = [...list, ...all.filter((p) => !ids.has(p.id))];
+  }
+  return list;
 }
 
-export async function saveMembers(postoId: string, members: string[]): Promise<void> {
+/** Acompanha o posto (lista de acesso) em tempo real. */
+export function watchPosto(postoId: string, cb: (p: PostoInfo | null) => void, onError: (e: Error) => void): () => void {
   const { db } = init();
-  await updateDoc(doc(db, 'postos', postoId), { members: [...new Set(members.map(normEmail))] });
+  return onSnapshot(
+    doc(db, 'postos', postoId),
+    (snap) => cb(snap.exists() ? { id: snap.id, ...(snap.data() as Omit<PostoInfo, 'id'>) } : null),
+    onError,
+  );
 }
 
-export function createFirebaseStore(postoId: string): Store {
+/** Só o dono muda: quem entra (members) e quem edita (editors). */
+export async function saveAccess(postoId: string, members: string[], editors: string[]): Promise<void> {
   const { db } = init();
+  const m = [...new Set(members.map(normEmail))];
+  const e = [...new Set(editors.map(normEmail))].filter((x) => m.includes(x));
+  await updateDoc(doc(db, 'postos', postoId), { members: m, editors: e });
+}
+
+/** Nome do posto (para a lista do administrador). */
+export async function getBusinessName(postoId: string): Promise<string | undefined> {
+  const { db } = init();
+  try {
+    const snap = await getDoc(doc(db, `postos/${postoId}/meta/config`));
+    return (snap.data() as AppConfig | undefined)?.businessName;
+  } catch {
+    return undefined;
+  }
+}
+
+type Op = (b: ReturnType<typeof writeBatch>) => void;
+
+/** Grava em lotes (o Firestore aceita até 500 operações por lote). */
+async function commitAll(db: Firestore, ops: Op[]) {
+  for (let i = 0; i < ops.length; i += 400) {
+    const b = writeBatch(db);
+    ops.slice(i, i + 400).forEach((op) => op(b));
+    await b.commit();
+  }
+}
+
+export function createFirebaseStore(postoId: string, opts: StoreOptions): Store {
+  const { db } = init();
+  const { author, onTooNew } = opts;
   const root = `postos/${postoId}`;
-  return {
+  const configRef = doc(db, `${root}/meta/config`);
+  const empRef = (id: string) => doc(db, `${root}/employees/${id}`);
+  const trashRef = (id: string) => doc(db, `${root}/trash/${id}`);
+  const schedRef = (month: string) => doc(db, `${root}/schedules/${month}`);
+  const histCol = (kind: HistoryKind, key: string) =>
+    collection(db, kind === 'config' ? `${root}/meta/config/history` : `${root}/schedules/${key}/history`);
+  const trashEntry = (e: Employee): TrashedEmployee & ReturnType<typeof stamp> =>
+    stamp({ employee: e, deletedAt: Date.now(), by: author.email, byName: author.name }, author);
+  const histEntry = (reason: string, data: unknown) =>
+    stamp({ at: Date.now(), by: author.email, byName: author.name, reason, data: clean(data) }, author);
+
+  /** Mantém só as últimas HISTORY_LIMIT versões. */
+  const prune = async (kind: HistoryKind, key: string) => {
+    const snap = await getDocs(query(histCol(kind, key), orderBy('at', 'desc')));
+    const extra = snap.docs.slice(HISTORY_LIMIT);
+    if (extra.length) await commitAll(db, extra.map((d) => (b) => b.delete(d.ref)));
+  };
+
+  const store: Store = {
     kind: 'firebase',
-    async getConfig() {
-      const snap = await getDoc(doc(db, `${root}/meta/config`));
-      return snap.exists() ? (snap.data() as AppConfig) : null;
+    watchConfig(cb, onError) {
+      return onSnapshot(
+        configRef,
+        (snap) => {
+          // Sem o documento no cache local, espera a resposta do servidor antes de concluir que não existe.
+          if (!snap.exists()) return snap.metadata.fromCache ? undefined : cb(null);
+          cb(splitMeta<AppConfig>(snap.data(), onTooNew).data);
+        },
+        onError,
+      );
     },
     async saveConfig(c) {
-      await setDoc(doc(db, `${root}/meta/config`), clean(c));
+      await setDoc(configRef, stamp(c, author));
     },
-    async listEmployees() {
-      const snap = await getDocs(collection(db, `${root}/employees`));
-      return snap.docs.map((d) => d.data() as Employee);
+    watchEmployees(cb, onError) {
+      return onSnapshot(
+        collection(db, `${root}/employees`),
+        (snap) => {
+          if (snap.empty && snap.metadata.fromCache) return;
+          cb(snap.docs.map((d) => splitMeta<Employee>(d.data(), onTooNew).data));
+        },
+        onError,
+      );
     },
     async saveEmployee(e) {
-      await setDoc(doc(db, `${root}/employees/${e.id}`), clean(e));
+      await setDoc(empRef(e.id), stamp(e, author));
     },
-    async deleteEmployee(id) {
-      await deleteDoc(doc(db, `${root}/employees/${id}`));
+    async deleteEmployee(e) {
+      await commitAll(db, [(b) => b.set(trashRef(e.id), trashEntry(e)), (b) => b.delete(empRef(e.id))]);
     },
-    async getSchedule(month) {
-      const snap = await getDoc(doc(db, `${root}/schedules/${month}`));
-      return snap.exists() ? (snap.data() as Schedule) : null;
+    async listTrash() {
+      const snap = await getDocs(collection(db, `${root}/trash`));
+      return snap.docs
+        .map((d) => splitMeta<TrashedEmployee>(d.data()).data)
+        .sort((a, b) => b.deletedAt - a.deletedAt);
+    },
+    async restoreEmployee(id) {
+      const snap = await getDoc(trashRef(id));
+      if (!snap.exists()) return;
+      const t = splitMeta<TrashedEmployee>(snap.data()).data;
+      await commitAll(db, [(b) => b.set(empRef(id), stamp(t.employee, author)), (b) => b.delete(trashRef(id))]);
+    },
+    watchSchedule(month, cb, onError) {
+      return onSnapshot(
+        schedRef(month),
+        (snap) => {
+          if (!snap.exists()) return snap.metadata.fromCache ? undefined : cb(null, null);
+          const { data, meta } = splitMeta<Schedule>(snap.data(), onTooNew);
+          cb(data, meta);
+        },
+        onError,
+      );
+    },
+    async listSchedules() {
+      const snap = await getDocs(collection(db, `${root}/schedules`));
+      return snap.docs.map((d) => splitMeta<Schedule>(d.data()).data);
     },
     async saveSchedule(s) {
-      await setDoc(doc(db, `${root}/schedules/${s.month}`), clean(s));
+      await setDoc(schedRef(s.month), stamp(s, author));
+    },
+    async addHistory(kind, key, reason, data) {
+      await addDoc(histCol(kind, key), histEntry(reason, data));
+      await prune(kind, key).catch(() => undefined);
+    },
+    async listHistory<T>(kind: HistoryKind, key: string) {
+      const snap = await getDocs(query(histCol(kind, key), orderBy('at', 'desc'), limit(HISTORY_LIMIT)));
+      return snap.docs.map((d) => ({ ...splitMeta<Omit<HistoryEntry<T>, 'id'>>(d.data()).data, id: d.id }));
+    },
+    async importAll(b) {
+      const ops: Op[] = [];
+      // 1) O que existe hoje vai para o histórico/lixeira antes de ser substituído.
+      if (b.config) {
+        const cur = await getDoc(configRef);
+        if (cur.exists()) {
+          const data = splitMeta(cur.data()).data;
+          ops.push((bt) => bt.set(doc(histCol('config', 'config')), histEntry('Antes de restaurar um backup', data)));
+        }
+      }
+      const curSchedules = await getDocs(collection(db, `${root}/schedules`));
+      const inFile = new Set(b.schedules.map((s) => s.month));
+      for (const d of curSchedules.docs) {
+        if (!inFile.has(d.id)) continue;
+        const data = splitMeta(d.data()).data;
+        ops.push((bt) => bt.set(doc(histCol('schedule', d.id)), histEntry('Antes de restaurar um backup', data)));
+      }
+      const curEmps = await getDocs(collection(db, `${root}/employees`));
+      const keep = new Set(b.employees.map((e) => e.id));
+      for (const d of curEmps.docs) {
+        if (keep.has(d.id)) continue;
+        const e = splitMeta<Employee>(d.data()).data;
+        ops.push((bt) => bt.set(trashRef(d.id), trashEntry(e)));
+        ops.push((bt) => bt.delete(d.ref));
+      }
+      // 2) Grava o conteúdo do arquivo.
+      for (const e of b.employees) ops.push((bt) => bt.set(empRef(e.id), stamp(e, author)));
+      if (b.config) {
+        const c = b.config;
+        ops.push((bt) => bt.set(configRef, stamp(c, author)));
+      }
+      for (const s of b.schedules) ops.push((bt) => bt.set(schedRef(s.month), stamp(s, author)));
+      await commitAll(db, ops);
     },
   };
+  return store;
 }

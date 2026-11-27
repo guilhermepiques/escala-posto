@@ -1,18 +1,27 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { User } from 'firebase/auth';
 import {
+  checkAdmin,
   createFirebaseStore,
+  editorsOf,
   firebaseEnabled,
   loadPostos,
   logOut,
-  saveMembers,
+  normEmail,
+  saveAccess,
   signIn,
+  watchPlatform,
+  watchPosto,
   watchUser,
+  type PlatformInfo,
   type PostoInfo,
 } from './data/firebase';
-import { createLocalStore, type Store } from './data/store';
+import { createLocalStore, SCHEMA_VERSION, type Store } from './data/store';
 import { defaultConfig } from './domain/defaults';
 import type { AppConfig, Employee } from './domain/types';
+
+/** Por que a pessoa não pode editar agora. */
+export type ReadOnlyReason = 'viewer' | 'outdated' | null;
 
 interface AppState {
   store: Store;
@@ -21,13 +30,20 @@ interface AppState {
   user: User | null;
   /** Posto atual (só no modo Firebase). */
   posto: PostoInfo | null;
-  /** Todos os postos a que o usuário tem acesso. */
+  /** Todos os postos a que o usuário tem acesso (o administrador vê todos). */
   postos: PostoInfo[];
+  /** Pode mudar escala, funcionários e configurações. */
+  canEdit: boolean;
+  readOnlyReason: ReadOnlyReason;
+  isOwner: boolean;
+  /** Administrador da plataforma (dono do EscalApp). */
+  isAdmin: boolean;
+  platform: PlatformInfo;
   switchPosto: (id: string) => void;
-  updateMembers: (members: string[]) => Promise<void>;
+  updateAccess: (members: string[], editors: string[]) => Promise<void>;
   saveConfig: (c: AppConfig) => Promise<void>;
   saveEmployee: (e: Employee) => Promise<void>;
-  deleteEmployee: (id: string) => Promise<void>;
+  deleteEmployee: (e: Employee) => Promise<void>;
   logOut: () => Promise<void>;
 }
 
@@ -40,7 +56,7 @@ export function useApp(): AppState {
 }
 
 /** Garante campos novos em configurações salvas por versões antigas. */
-function migrateConfig(c: AppConfig | null): AppConfig {
+export function migrateConfig(c: AppConfig | null): AppConfig {
   const def = defaultConfig();
   if (!c) return def;
   // Versões antigas permitiam 6 dias seguidos; o padrão agora é 5 com folgas também de domingo a sábado.
@@ -57,21 +73,35 @@ function migrateConfig(c: AppConfig | null): AppConfig {
 }
 
 /** Cadastros antigos (com turno fixo obrigatório) viram equipe dia/madrugada. */
-function migrateEmployee(e: Employee & { shiftId?: string }): Employee {
+export function migrateEmployee(e: Employee & { shiftId?: string }): Employee {
   if (e.team) return e;
   const { shiftId, ...rest } = e;
   return { ...rest, team: shiftId === 'N' ? 'noite' : 'dia' };
 }
 
+const byName = (a: Employee, b: Employee) => a.name.localeCompare(b.name, 'pt-BR', { numeric: true });
+
+const permissionMsg = (err: unknown) => {
+  const msg = (err as Error)?.message ?? String(err);
+  return msg.includes('permission') || msg.includes('insufficient')
+    ? 'Esta conta do Google não tem (mais) permissão para acessar esta escala. Entre com a conta autorizada.'
+    : `Não foi possível carregar os dados: ${msg}`;
+};
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(!firebaseEnabled);
-  const [store, setStore] = useState<Store | null>(firebaseEnabled ? null : createLocalStore());
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [tooNew, setTooNew] = useState(false);
+  const [store, setStore] = useState<Store | null>(
+    firebaseEnabled ? null : createLocalStore({ author: { email: '' }, onTooNew: () => setTooNew(true) }),
+  );
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [postos, setPostos] = useState<PostoInfo[]>([]);
   const [postoId, setPostoId] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<PlatformInfo>({ minSchemaVersion: 0 });
 
   useEffect(() => {
     if (!firebaseEnabled) return;
@@ -81,14 +111,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setEmployees(null);
       setError(null);
       setStore(null);
+      setTooNew(false);
       if (!u) {
         setPostos([]);
         setPostoId(null);
+        setIsAdmin(false);
         setAuthReady(true);
         return;
       }
       try {
-        const list = await loadPostos(u);
+        const admin = await checkAdmin(u);
+        setIsAdmin(admin);
+        const list = await loadPostos(u, admin);
         setPostos(list);
         let saved: string | null = null;
         try {
@@ -96,8 +130,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } catch {
           /* ignora */
         }
+        const email = normEmail(u.email ?? '');
+        const mine = list.filter((p) => p.members.includes(email));
         // Prefere o último posto usado; senão, um posto para o qual a pessoa foi convidada.
-        const chosen = list.find((p) => p.id === saved) ?? list.find((p) => p.ownerUid !== u.uid) ?? list[0];
+        const chosen = list.find((p) => p.id === saved) ?? mine.find((p) => p.ownerUid !== u.uid) ?? mine[0] ?? list[0];
         setPostoId(chosen.id);
       } catch (err) {
         setError(`Não foi possível abrir a conta: ${(err as Error).message}`);
@@ -106,79 +142,110 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Versão mínima do app (definida pelo administrador), em tempo real.
+  useEffect(() => {
+    if (!firebaseEnabled || !user) return;
+    return watchPlatform(setPlatform);
+  }, [user]);
+
+  // Lista de acesso do posto em tempo real (se o dono mudar algo, vale na hora).
   useEffect(() => {
     if (!postoId) return;
+    return watchPosto(
+      postoId,
+      (p) => p && setPostos((prev) => (prev.some((x) => x.id === p.id) ? prev.map((x) => (x.id === p.id ? p : x)) : [...prev, p])),
+      (err) => setError(permissionMsg(err)),
+    );
+  }, [postoId]);
+
+  useEffect(() => {
+    if (!postoId || !user) return;
     setConfig(null);
     setEmployees(null);
-    setStore(createFirebaseStore(postoId));
+    setTooNew(false);
+    setStore(
+      createFirebaseStore(postoId, {
+        author: { email: normEmail(user.email ?? ''), name: user.displayName ?? undefined },
+        onTooNew: () => setTooNew(true),
+      }),
+    );
     try {
       localStorage.setItem('escala:posto', postoId);
     } catch {
       /* ignora */
     }
-  }, [postoId]);
+  }, [postoId, user]);
 
   const posto = postos.find((p) => p.id === postoId) ?? null;
-  const updateMembers = useCallback(
-    async (members: string[]) => {
+  const email = normEmail(user?.email ?? '');
+  const outdated = tooNew || SCHEMA_VERSION < platform.minSchemaVersion;
+  const isEditor = !firebaseEnabled || (!!posto && editorsOf(posto).includes(email));
+  const canEdit = isEditor && !outdated;
+  const readOnlyReason: ReadOnlyReason = outdated ? 'outdated' : !isEditor ? 'viewer' : null;
+  const isOwner = !!posto && posto.ownerUid === user?.uid;
+  const canEditRef = useRef(canEdit);
+  canEditRef.current = canEdit;
+
+  const updateAccess = useCallback(
+    async (members: string[], editors: string[]) => {
       if (!posto) return;
-      await saveMembers(posto.id, members);
-      setPostos((prev) => prev.map((p) => (p.id === posto.id ? { ...p, members: [...new Set(members.map((m) => m.trim().toLowerCase()))] } : p)));
+      await saveAccess(posto.id, members, editors);
     },
     [posto],
   );
 
+  // Configurações e funcionários em tempo real.
   useEffect(() => {
     if (!store) return;
     let alive = true;
-    (async () => {
-      try {
-        const [c, e] = await Promise.all([store.getConfig(), store.listEmployees()]);
-        if (!alive) return;
-        const cfg = migrateConfig(c);
-        if (!c) await store.saveConfig(cfg);
-        setConfig(cfg);
-        setEmployees(e.map(migrateEmployee).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { numeric: true })));
-      } catch (err) {
-        if (!alive) return;
-        const msg = (err as Error).message ?? String(err);
-        setError(
-          msg.includes('permission')
-            ? 'Esta conta do Google não tem permissão para acessar a escala. Entre com a conta autorizada.'
-            : `Não foi possível carregar os dados: ${msg}`,
-        );
-      }
-    })();
+    const onError = (err: Error) => alive && setError(permissionMsg(err));
+    const unsubConfig = store.watchConfig((c) => {
+      if (!alive) return;
+      const cfg = migrateConfig(c);
+      // Posto novo: grava a configuração padrão (só quem pode editar).
+      if (!c && canEditRef.current) store.saveConfig(cfg).catch(() => undefined);
+      setConfig(cfg);
+    }, onError);
+    const unsubEmps = store.watchEmployees((list) => {
+      if (alive) setEmployees(list.map(migrateEmployee).sort(byName));
+    }, onError);
     return () => {
       alive = false;
+      unsubConfig();
+      unsubEmps();
     };
   }, [store]);
 
+  const guard = useCallback(() => {
+    if (!canEditRef.current) throw new Error('Você não tem permissão para editar.');
+  }, []);
+
   const saveConfig = useCallback(
     async (c: AppConfig) => {
+      guard();
       const next = { ...c, updatedAt: Date.now() };
       setConfig(next);
       await store!.saveConfig(next);
     },
-    [store],
+    [store, guard],
   );
 
   const saveEmployee = useCallback(
     async (e: Employee) => {
-      setEmployees((prev) =>
-        [...(prev ?? []).filter((x) => x.id !== e.id), e].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR', { numeric: true })),
-      );
+      guard();
+      setEmployees((prev) => [...(prev ?? []).filter((x) => x.id !== e.id), e].sort(byName));
       await store!.saveEmployee(e);
     },
-    [store],
+    [store, guard],
   );
 
   const deleteEmployee = useCallback(
-    async (id: string) => {
-      setEmployees((prev) => (prev ?? []).filter((x) => x.id !== id));
-      await store!.deleteEmployee(id);
+    async (e: Employee) => {
+      guard();
+      setEmployees((prev) => (prev ?? []).filter((x) => x.id !== e.id));
+      await store!.deleteEmployee(e);
     },
-    [store],
+    [store, guard],
   );
 
   const value = useMemo<AppState | null>(
@@ -191,15 +258,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
             user,
             posto,
             postos,
+            canEdit,
+            readOnlyReason,
+            isOwner,
+            isAdmin,
+            platform,
             switchPosto: setPostoId,
-            updateMembers,
+            updateAccess,
             saveConfig,
             saveEmployee,
             deleteEmployee,
             logOut,
           }
         : null,
-    [store, config, employees, user, posto, postos, updateMembers, saveConfig, saveEmployee, deleteEmployee],
+    [store, config, employees, user, posto, postos, canEdit, readOnlyReason, isOwner, isAdmin, platform, updateAccess, saveConfig, saveEmployee, deleteEmployee],
   );
 
   if (!authReady) return <FullScreen>Carregando…</FullScreen>;

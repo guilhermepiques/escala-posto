@@ -12,9 +12,11 @@ interface Props {
   onSet: (empId: string, date: ISODate, shiftId: string | null) => void;
   onToggleLock: (empId: string, date: ISODate) => void;
   highlight?: { empId?: string; date?: ISODate } | null;
+  /** Só visualização: clicar na célula não abre o menu de edição. */
+  readOnly?: boolean;
 }
 
-export function ScheduleGrid({ ctx, schedule, issues, onSet, onToggleLock, highlight }: Props) {
+export function ScheduleGrid({ ctx, schedule, issues, onSet, onToggleLock, highlight, readOnly }: Props) {
   const [menu, setMenu] = useState<{ empId: string; date: ISODate; x: number; y: number } | null>(null);
   const a = schedule.assignments;
   const locked = schedule.locked ?? {};
@@ -126,7 +128,7 @@ export function ScheduleGrid({ ctx, schedule, issues, onSet, onToggleLock, highl
                           className={`relative border-b border-l border-slate-100 p-0.5 text-center ${wd === 0 ? 'bg-rose-50/40' : ''}`}
                         >
                           <button
-                            className={`flex h-7 w-full items-center justify-center rounded-md text-[11px] font-bold transition-shadow hover:ring-2 hover:ring-brand-600 ${
+                            className={`flex h-7 w-full items-center justify-center rounded-md text-[11px] font-bold transition-shadow ${readOnly ? 'cursor-default' : 'hover:ring-2 hover:ring-brand-600'} ${
                               sev === 'erro'
                                 ? 'ring-2 ring-red-600'
                                 : sev === 'atencao'
@@ -148,6 +150,7 @@ export function ScheduleGrid({ ctx, schedule, issues, onSet, onToggleLock, highl
                                   : `Folga${isLocked ? ' (travada)' : ''}`
                             }
                             onClick={(e) => {
+                              if (readOnly) return;
                               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
                               setMenu({ empId: emp.id, date: d, x: r.left, y: r.bottom });
                             }}
