@@ -26,7 +26,7 @@ export interface Shift {
 
 export interface Absence {
   id: string;
-  type: 'ferias' | 'atestado' | 'afastamento' | 'outro';
+  type: 'ferias' | 'atestado' | 'afastamento' | 'maternidade' | 'outro';
   start: ISODate;
   end: ISODate;
   note?: string;

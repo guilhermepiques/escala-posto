@@ -24,9 +24,10 @@ describe('horas', () => {
     const n = { ...cfg.shifts.find((s) => s.id === 'N')!, breakMinutes: 30 };
     expect(Math.round(shiftHours(n).countedMinutes)).toBe(514);
   });
-  it('manhã com 30 min de intervalo conta 7h30', () => {
+  it('manhã com 1h de intervalo conta 7h00 (30 min: 7h30)', () => {
     const cfg = defaultConfig();
-    expect(shiftHours(cfg.shifts[0]).countedMinutes).toBe(450);
+    expect(shiftHours(cfg.shifts[0]).countedMinutes).toBe(420);
+    expect(shiftHours({ ...cfg.shifts[0], breakMinutes: 30 }).countedMinutes).toBe(450);
   });
 });
 

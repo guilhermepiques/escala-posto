@@ -6,7 +6,7 @@ import { formatMonth, formatTimestamp, minToHM, weekday, weekdayShort } from '..
 import { summarize } from '../domain/validator';
 import { useMonthSchedule } from '../hooks/useMonthSchedule';
 
-const ABS: Record<string, string> = { ferias: 'FÉR', atestado: 'AT', afastamento: 'AF', outro: 'AUS' };
+const ABS: Record<string, string> = { ferias: 'FÉR', atestado: 'AT', afastamento: 'AF', maternidade: 'LM', outro: 'AUS' };
 
 /** Folha da escala pronta para imprimir, salvar em PDF ou baixar como imagem (WhatsApp). */
 export default function PrintPage() {
@@ -123,7 +123,7 @@ export default function PrintPage() {
         </table>
 
         <div className="mt-2 flex flex-wrap justify-between gap-2 text-[11px] text-slate-600">
-          <span>F = folga · FÉR = férias · AT = atestado · AF = afastamento · colunas rosa = domingo · amarelas = feriado (pago em dobro)</span>
+          <span>F = folga · FÉR = férias · AT = atestado · AF = afastamento · LM = licença-maternidade · colunas rosa = domingo · amarelas = feriado (pago em dobro)</span>
           <span className="font-semibold text-emerald-700">
             ✓ Revisada{schedule.reviewedAt ? ` em ${formatTimestamp(schedule.reviewedAt)}` : ''} — dentro das regras do 5x2 (EC 141/2026, CLT e CCT 2026-2028)
           </span>

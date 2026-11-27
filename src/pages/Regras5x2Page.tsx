@@ -135,6 +135,10 @@ export default function Regras5x2Page() {
         <li>
           <b>Mulheres:</b> folga no domingo <b>a cada 2 semanas</b> (CLT art. 386, confirmado pelo STF no RE 1403904; convenção cl. 6.2.1).
         </li>
+        <li>
+          <b>Licença-maternidade:</b> 120 dias (CF art. 7º, XVIII; CLT art. 392), ou 180 se o posto aderir ao Empresa Cidadã. No cadastro da
+          funcionária, use o tipo “Licença-maternidade” nas ausências: ela sai da escala nesse período.
+        </li>
       </ul>
       <h3>4. Feriados</h3>
       <ul>
@@ -145,7 +149,7 @@ export default function Regras5x2Page() {
       </ul>
       <h3>5. Intervalo</h3>
       <ul>
-        <li>Turno de mais de 6h tem intervalo para refeição. A convenção permite reduzir para no mínimo 30 minutos (cl. 6.4.1).</li>
+        <li>Turno de mais de 6h tem intervalo para refeição de 1 a 2 horas (CLT art. 71) — é o padrão do app. A convenção permite reduzir para no mínimo 30 minutos (cl. 6.4.1).</li>
         <li>O intervalo não conta como hora trabalhada.</li>
       </ul>
       <h3>6. Hora noturna</h3>

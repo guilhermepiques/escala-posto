@@ -451,7 +451,7 @@ function fmtH(hours: number): string {
 }
 
 export function labelAbsence(t: string): string {
-  return t === 'ferias' ? 'férias' : t === 'atestado' ? 'atestado' : t === 'afastamento' ? 'afastamento' : 'ausência';
+  return t === 'ferias' ? 'férias' : t === 'atestado' ? 'atestado' : t === 'afastamento' ? 'afastamento' : t === 'maternidade' ? 'licença-maternidade' : 'ausência';
 }
 
 export function summarize(issues: Issue[]) {

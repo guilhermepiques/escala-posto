@@ -3,7 +3,7 @@ import { absenceOn, allowedShifts, type PlanContext } from '../domain/context';
 import { formatDate, weekday, weekdayShort } from '../domain/dates';
 import type { Employee, ISODate, Issue, Schedule } from '../domain/types';
 
-const ABS_LABEL: Record<string, string> = { ferias: 'FÉR', atestado: 'AT', afastamento: 'AF', outro: 'AUS' };
+const ABS_LABEL: Record<string, string> = { ferias: 'FÉR', atestado: 'AT', afastamento: 'AF', maternidade: 'LM', outro: 'AUS' };
 
 interface Props {
   ctx: PlanContext;

@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useConfirm } from '../components/Dialog';
-import { diffDays, formatDate } from '../domain/dates';
+import { addDays, diffDays, formatDate } from '../domain/dates';
 import { newId, sampleEmployees } from '../domain/defaults';
 import { effectiveDemand } from '../domain/demand';
 import type { Absence, Employee, Team } from '../domain/types';
 import { labelAbsence } from '../domain/validator';
 import { useApp } from '../state';
+
+/** Licença-maternidade: 120 dias (CF art. 7º, XVIII; CLT art. 392). */
+const MATERNITY_DAYS = 120;
 
 const TEAMS: Array<{ id: Team; title: string; desc: string }> = [
   { id: 'dia', title: 'Equipe do dia', desc: 'Faz rodízio entre manhã e tarde' },
@@ -204,7 +207,8 @@ function EmployeeDialog({
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" className="mt-1" checked={e.female} onChange={(ev) => set('female', ev.target.checked)} />
             <span>
-              <b>Mulher</b>: tem direito a folga no domingo a cada 2 semanas (CLT art. 386 e convenção cl. 6.2.1). Os homens, a cada 3.
+              <b>Mulher</b>: tem direito a folga no domingo a cada 2 semanas (CLT art. 386 e convenção cl. 6.2.1). Os homens, a cada 3. Também
+              libera o tipo <b>Licença-maternidade</b> (120 dias) nas ausências abaixo.
             </span>
           </label>
 
@@ -239,16 +243,32 @@ function EmployeeDialog({
             <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
               <div>
                 <span className="text-xs text-slate-600">Tipo</span>
-                <select className="input" value={abs.type} onChange={(ev) => setAbs({ ...abs, type: ev.target.value as Absence['type'] })}>
+                <select
+                  className="input"
+                  value={abs.type}
+                  onChange={(ev) => {
+                    const type = ev.target.value as Absence['type'];
+                    setAbs({ ...abs, type, end: type === 'maternidade' && abs.start ? addDays(abs.start, MATERNITY_DAYS - 1) : abs.end });
+                  }}
+                >
                   <option value="ferias">Férias</option>
                   <option value="atestado">Atestado</option>
                   <option value="afastamento">Afastamento</option>
+                  {e.female && <option value="maternidade">Licença-maternidade</option>}
                   <option value="outro">Outro</option>
                 </select>
               </div>
               <div>
                 <span className="text-xs text-slate-600">Primeiro dia</span>
-                <input type="date" className="input" value={abs.start} onChange={(ev) => setAbs({ ...abs, start: ev.target.value })} />
+                <input
+                  type="date"
+                  className="input"
+                  value={abs.start}
+                  onChange={(ev) => {
+                    const start = ev.target.value;
+                    setAbs({ ...abs, start, end: abs.type === 'maternidade' && start ? addDays(start, MATERNITY_DAYS - 1) : abs.end });
+                  }}
+                />
               </div>
               <div>
                 <span className="text-xs text-slate-600">Último dia</span>
@@ -268,6 +288,8 @@ function EmployeeDialog({
             {absDays > 0 && (
               <p className={`mt-1 text-xs ${abs.type === 'ferias' && absDays < 5 ? 'text-red-700' : 'text-slate-500'}`}>
                 {absDays} dias{abs.type === 'ferias' && absDays < 5 ? ': férias não podem ter menos de 5 dias.' : ''}
+                {abs.type === 'maternidade' &&
+                  ' · licença-maternidade: 120 dias (CF art. 7º, XVIII; CLT art. 392). Empresa Cidadã: 180 dias — ajuste o último dia.'}
               </p>
             )}
           </div>

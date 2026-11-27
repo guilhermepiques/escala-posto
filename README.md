@@ -36,6 +36,7 @@ npm run build
 ```
 
 Sem as variáveis do Firebase o site roda em **modo local** (dados guardados só no navegador) — útil para testar.
+Com o `.env.local` preenchido, `npm run dev -- --mode demo` força o modo local (sem entrar com nenhuma conta).
 
 ## Configurar o Firebase (banco de dados + login)
 

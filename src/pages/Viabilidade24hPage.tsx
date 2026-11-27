@@ -136,7 +136,7 @@ export default function Viabilidade24hPage() {
         </ul>
       </Callout>
 
-      <Callout tone="night" title="Por que a madrugada tem 1 hora de intervalo (e o dia, 30 minutos)">
+      <Callout tone="night" title="Por que a madrugada precisa de 1 hora de intervalo">
         <p>
           Na madrugada vale a <b>hora noturna reduzida</b>: cada hora entre 22h e 5h conta como 52min30s (CLT art. 73). O turno vai sempre das
           22h às 06h (8h no relógio). Como o intervalo não conta como trabalho, quanto <b>maior</b> o intervalo, <b>menos</b> horas contam:
@@ -166,7 +166,7 @@ export default function Viabilidade24hPage() {
           </tbody>
         </table>
         <p className="!mb-0">
-          De dia não existe hora reduzida: com 30 minutos de intervalo, 5 turnos dão 37h30 (bem abaixo de 42h). Se um dia quiserem 30 minutos na
+          De dia não existe hora reduzida: com 1 hora de intervalo, 5 turnos dão 35h (e, se reduzirem para 30 minutos, 37h30 — ainda abaixo de 42h). Se um dia quiserem 30 minutos na
           madrugada, é só mudar em <b>Configurações</b>. Vai gerar cerca de 51 minutos de hora extra por semana para cada pessoa da madrugada
           (pagos com 50% + adicional noturno), e o revisor vai avisar.
         </p>

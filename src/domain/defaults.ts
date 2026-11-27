@@ -1,9 +1,10 @@
 import type { AppConfig, Demand, Employee, Movement, Rules, Shift } from './types';
 
 export const DEFAULT_SHIFTS: Shift[] = [
-  { id: 'M', code: 'M', name: 'Manhã', start: '06:00', end: '14:00', breakMinutes: 30, team: 'dia', color: '#f59e0b' },
-  { id: 'T', code: 'T', name: 'Tarde', start: '14:00', end: '22:00', breakMinutes: 30, team: 'dia', color: '#0ea5e9' },
-  // Madrugada com 1h de intervalo: com 30 min a semana passaria de 42h por causa da hora noturna reduzida.
+  { id: 'M', code: 'M', name: 'Manhã', start: '06:00', end: '14:00', breakMinutes: 60, team: 'dia', color: '#f59e0b' },
+  { id: 'T', code: 'T', name: 'Tarde', start: '14:00', end: '22:00', breakMinutes: 60, team: 'dia', color: '#0ea5e9' },
+  // 1h de intervalo em todos os turnos (padrão da CLT, art. 71). Na madrugada, com 30 min a semana passaria de 42h
+  // por causa da hora noturna reduzida.
   { id: 'N', code: 'N', name: 'Madrugada', start: '22:00', end: '06:00', breakMinutes: 60, team: 'noite', color: '#6366f1' },
 ];
 

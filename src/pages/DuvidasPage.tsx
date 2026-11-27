@@ -120,16 +120,18 @@ export default function DuvidasPage() {
             Configurações.
           </p>
         </Faq>
-        <Faq q="Por que a madrugada tem 1 hora de intervalo e o dia só 30 minutos?">
+        <Faq q="Por que o intervalo é de 1 hora? Dá para reduzir para 30 minutos?">
           <p>
-            Por causa da hora noturna reduzida (cada hora entre 22h e 5h conta 52min30s). Com 30 minutos de intervalo, a madrugada conta 8h34
-            por noite e passa de 42h na semana. Com 1h, conta 8h00 e fica em 40h, sem hora extra. Veja a explicação completa em{' '}
+            O padrão é 1 hora em todos os turnos (CLT art. 71). A convenção permite reduzir para 30 minutos (cl. 6.4.1), e isso se muda em
+            Configurações. De dia, 30 minutos ainda cabem no limite. Na madrugada não: por causa da hora noturna reduzida (cada hora entre 22h
+            e 5h conta 52min30s), com 30 minutos a noite conta 8h34 e passa de 42h na semana. Com 1h, conta 8h00 e fica em 40h, sem hora
+            extra. Veja a explicação completa em{' '}
             <Link to="/como-manter-24h">Como manter 24h</Link>.
           </p>
         </Faq>
         <Faq q="O que muda em dezembro de 2027?">
           <p>
-            O limite semanal cai de 42h para 40h, e o app troca o limite sozinho. Com os turnos atuais (37h30 de dia e 40h na madrugada), a
+            O limite semanal cai de 42h para 40h, e o app troca o limite sozinho. Com os turnos atuais (35h de dia e 40h na madrugada), a
             escala continua dentro da regra.
           </p>
         </Faq>

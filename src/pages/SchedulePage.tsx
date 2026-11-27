@@ -245,7 +245,7 @@ function Legend() {
       </span>
       <span className="flex items-center gap-1">
         <span className="inline-flex h-5 w-8 items-center justify-center rounded bg-slate-200 text-[10px] font-bold text-slate-600">FÉR</span>
-        Férias / AT atestado / AF afastamento
+        Férias / AT atestado / AF afastamento / LM licença-maternidade
       </span>
       <span>🔒 travado</span>
       <span className="flex items-center gap-1">
